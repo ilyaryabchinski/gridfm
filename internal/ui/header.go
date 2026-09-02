@@ -23,23 +23,41 @@ func ansiCut(s string, width int) string {
 	return ansi.Cut(s, width, total)
 }
 
-// RenderBreadcrumbs draws the top bar: the current location as breadcrumb
-// segments separated by slashes. The home prefix abbreviates to ~, and
-// leading segments collapse into an ellipsis when the location is longer
-// than the terminal.
-func RenderBreadcrumbs(width int, path, home string) string {
+// RenderBreadcrumbs draws the top bar: back and forward history indicators
+// followed by the current location as breadcrumb segments separated by
+// slashes. The home prefix abbreviates to ~, and leading segments collapse
+// into an ellipsis when the location is longer than the terminal.
+func RenderBreadcrumbs(width int, path, home string, canBack, canForward bool) string {
+	history := renderHistoryIndicators(canBack, canForward)
 	segments := crumbSegments(path, home)
-	line := renderCrumbs(segments)
+	line := history + renderCrumbs(segments)
 
 	for len(segments) > 2 && ansi.StringWidth(line) > width {
 		segments = collapseLeadSegment(segments)
-		line = renderCrumbs(segments)
+		line = history + renderCrumbs(segments)
 	}
 
 	return lipgloss.NewStyle().
 		Width(width).
 		MaxWidth(width).
 		Render(TruncateName(line, width))
+}
+
+// renderHistoryIndicators renders the back and forward arrows, bright when
+// the direction is available and faint when exhausted.
+func renderHistoryIndicators(canBack, canForward bool) string {
+	dim := lipgloss.NewStyle().Faint(true)
+	live := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
+
+	back, forward := dim.Render("←"), dim.Render("→")
+	if canBack {
+		back = live.Render("←")
+	}
+	if canForward {
+		forward = live.Render("→")
+	}
+
+	return back + " " + forward + " "
 }
 
 // crumbSegments turns a path into display segments: ~ for the home prefix,

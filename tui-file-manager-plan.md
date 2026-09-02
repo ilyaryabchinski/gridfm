@@ -175,6 +175,11 @@ Version 1 sidebar sections:
 - Bookmarks: user-configured local paths.
 - Mounts: mounted local volumes that can be detected reliably.
 
+Milestone mapping: Milestone 1 ships the sidebar itself with Home and
+existing user folders. Recent, Starred, Trash, bookmarks, and mounts
+appear as their data sources arrive in Milestones 2 and 3 (trash in 2;
+bookmarks, recents, and mounts in 3).
+
 Later sidebar sections:
 
 - Saved searches.

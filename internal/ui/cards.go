@@ -7,6 +7,7 @@ import (
 	"gridfm/internal/browser"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Category is the placeholder file-type classification used for labels and
@@ -114,8 +115,13 @@ func RenderCard(e browser.Entry, zoom ZoomLevel, focused bool, icons IconMode) s
 	var lines []string
 	switch zoom {
 	case ZoomCompact:
-		// Icon and truncated name on a single content line.
-		lines = []string{name}
+		// Icon and truncated name share the single content line.
+		glyphWidth := ansi.StringWidth(glyph)
+		nameWidth := max(innerWidth-glyphWidth-1, 1)
+		lines = []string{
+			label + " " + categoryStyle(category).Bold(focused).
+				Render(TruncateName(SanitizeName(e.Name), nameWidth)),
+		}
 	case ZoomDetailed:
 		// Name plus size, permissions, and modification time.
 		meta, when := EntryMeta(e)

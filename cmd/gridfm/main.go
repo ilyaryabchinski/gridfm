@@ -16,7 +16,8 @@ import (
 
 func main() {
 	icons := flag.String("icons", ui.IconModeUnicode.String(),
-		"file type representation: labels, unicode, or nerdfont")
+		"file type representation: labels, unicode, or nerdfont "+
+			"(nerdfont needs a patched font; use labels if glyphs render wrong)")
 
 	flag.Parse()
 

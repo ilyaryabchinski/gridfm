@@ -109,6 +109,32 @@ func TestRenderCardMatchesZoomGeometry(t *testing.T) {
 	}
 }
 
+func TestRenderCompactCardShowsIconAndName(t *testing.T) {
+	t.Parallel()
+
+	entry := browser.Entry{Name: "main.go", Path: "/d/main.go"}
+	card := ui.RenderCard(entry, ui.ZoomCompact, false, ui.IconModeUnicode)
+
+	if !strings.Contains(card, "🐹") {
+		t.Errorf("compact card should include the type glyph, got:\n%s", card)
+	}
+	if !strings.Contains(card, "main.go") {
+		t.Errorf("compact card should include the name, got:\n%s", card)
+	}
+	// A long name truncates but keeps both icon and name visible.
+	entry.Name = "a-very-long-file-name.go"
+	card = ui.RenderCard(entry, ui.ZoomCompact, false, ui.IconModeUnicode)
+	if !strings.Contains(card, "🐹") || !strings.Contains(card, "…") {
+		t.Errorf("compact card should truncate the name with an ellipsis, got:\n%s", card)
+	}
+	lines := strings.Split(card, "\n")
+	for i, line := range lines {
+		if w := ansi.StringWidth(line); w != ui.CompactCardWidth {
+			t.Errorf("compact card line %d is %d cells, want %d", i, w, ui.CompactCardWidth)
+		}
+	}
+}
+
 func TestRenderDetailedCardShowsMetadata(t *testing.T) {
 	t.Parallel()
 
