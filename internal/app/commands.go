@@ -32,7 +32,7 @@ func openEntryCmd(requestID uint64, path string) tea.Cmd {
 			}
 		}
 		if !info.IsDir() {
-			return EntryNotDirectoryMsg{Path: path}
+			return EntryNotDirectoryMsg{Path: path, RequestID: requestID}
 		}
 		entries, err := browser.ReadDir(path)
 

@@ -25,6 +25,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case EntryNotDirectoryMsg:
+		if msg.RequestID != m.requestID {
+			return m, nil // stale result from a superseded request
+		}
+
+		// Completing the open attempt ends its request; the note surfaces
+		// the outcome without disturbing the loaded directory.
+		m.loading = false
 		m.note = "not a directory: " + filepath.Base(msg.Path)
 
 		return m, nil
@@ -47,6 +54,9 @@ func (m *Model) applyDirectoryLoaded(msg DirectoryLoadedMsg) {
 
 	if msg.Err != nil {
 		m.loadErr = msg.Err
+		// Old entries stay visible; the failure is surfaced as a status
+		// note so failed navigation is never silent.
+		m.note = "error: " + msg.Err.Error()
 
 		return
 	}

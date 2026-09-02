@@ -17,6 +17,9 @@ import (
 // identity through errors.Is.
 var errTestLoad = errors.New("permission denied")
 
+// errTestEscape embeds a control character to prove rendering sanitizes it.
+var errTestEscape = errors.New("esc \x1b[31mred")
+
 // feed applies a message to the model and returns the updated model.
 func feed(t *testing.T, m tea.Model, msg tea.Msg) *app.Model {
 	t.Helper()
@@ -35,10 +38,10 @@ func press(t *testing.T, m *app.Model, s string) *app.Model {
 	return feed(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)})
 }
 
-func pressKey(t *testing.T, m *app.Model, keyType tea.KeyType) *app.Model {
+func pressBackspace(t *testing.T, m *app.Model) *app.Model {
 	t.Helper()
 
-	return feed(t, m, tea.KeyMsg{Type: keyType})
+	return feed(t, m, tea.KeyMsg{Type: tea.KeyBackspace})
 }
 
 func resize(t *testing.T, m *app.Model, w, h int) *app.Model {
@@ -98,7 +101,7 @@ func TestStaleDirectoryResultIsIgnored(t *testing.T) {
 	m = loaded(t, m, 1, "/tmp/old", entriesAt("/tmp/old", 3), nil)
 
 	// Navigating to the parent starts request 2. Its result applies...
-	m = pressKey(t, m, tea.KeyBackspace)
+	m = pressBackspace(t, m)
 	m = loaded(t, m, 2, "/tmp", []browser.Entry{{Name: "x", Path: "/tmp/x"}}, nil)
 	if got := m.Path(); got != "/tmp" {
 		t.Fatalf("newest result should apply, Path = %q", got)
@@ -168,7 +171,7 @@ func TestBackspaceAtLeftEdgeGoesToParent(t *testing.T) {
 		t.Errorf("h with room to move should not navigate, Path = %q", m.Path())
 	}
 
-	m = pressKey(t, m, tea.KeyBackspace)
+	m = pressBackspace(t, m)
 	if m.Path() != "/d/sub" {
 		t.Errorf("Path should not change until the load completes, got %q", m.Path())
 	}
@@ -183,7 +186,7 @@ func TestBackspaceAtRootIsNoOp(t *testing.T) {
 	m := resize(t, app.New("/"), 80, 24)
 	m = loaded(t, m, 1, "/", []browser.Entry{{Name: "x", Path: "/x"}}, nil)
 
-	m = pressKey(t, m, tea.KeyBackspace)
+	m = pressBackspace(t, m)
 	if m.IsLoading() {
 		t.Error("backspace at the filesystem root should do nothing")
 	}
@@ -258,5 +261,111 @@ func TestViewTooSmallKeepsState(t *testing.T) {
 	m = resize(t, m, 80, 24)
 	if !strings.Contains(m.View(), "keep.txt") {
 		t.Error("growing back should restore the grid with state intact")
+	}
+}
+
+func TestViewRendersEveryRowWithGaps(t *testing.T) {
+	t.Parallel()
+
+	// 12 entries at 80x24 render 5 columns, 3 rows with a spacer line
+	// between card rows. Regression: an inner-loop index bug used to drop
+	// every second row.
+	m := resize(t, app.New("/d"), 80, 24)
+	m = loaded(t, m, 1, "/d", entriesAt("/d", 12), nil)
+
+	view := m.View()
+	for _, want := range []string{"entry-00.txt", "entry-05.txt", "entry-10.txt"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("view should render %q (rows 0, 1, and 2)", want)
+		}
+	}
+
+	lines := strings.Split(view, "\n")
+	// Header (1) + card row 0 (5 lines) lands the first gap at line 7 (index 6).
+	if len(lines) < 8 {
+		t.Fatalf("view has %d lines, want at least 8", len(lines))
+	}
+	if strings.TrimSpace(lines[6]) != "" {
+		t.Errorf("line 7 should be the blank gap between card rows, got %q", lines[6])
+	}
+	if strings.TrimSpace(lines[12]) != "" {
+		t.Errorf("line 13 should be the blank gap between card rows, got %q", lines[12])
+	}
+}
+
+func TestEnterOnFileClearsLoadingAndShowsNote(t *testing.T) {
+	t.Parallel()
+
+	m := resize(t, app.New("/d"), 80, 24)
+	m = loaded(t, m, 1, "/d", []browser.Entry{{Name: "f.txt", Path: "/d/f.txt"}}, nil)
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	opened, ok := next.(*app.Model)
+	if !ok {
+		t.Fatalf("Update returned %T, want *app.Model", next)
+	}
+	if !opened.IsLoading() {
+		t.Fatal("entering an entry should start a request")
+	}
+
+	opened = feed(t, opened, app.EntryNotDirectoryMsg{Path: "/d/f.txt", RequestID: 2})
+	if opened.IsLoading() {
+		t.Error("a completed open must end the loading state")
+	}
+	if view := opened.View(); !strings.Contains(view, "not a directory: f.txt") {
+		t.Errorf("view should surface the note, got %q", view)
+	}
+}
+
+func TestStaleEntryNotDirectoryIsIgnored(t *testing.T) {
+	t.Parallel()
+
+	m := resize(t, app.New("/d"), 80, 24)
+	m = loaded(t, m, 1, "/d", []browser.Entry{{Name: "f.txt", Path: "/d/f.txt"}}, nil)
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	opened, ok := next.(*app.Model)
+	if !ok {
+		t.Fatalf("Update returned %T, want *app.Model", next)
+	}
+	opened = feed(t, opened, app.EntryNotDirectoryMsg{Path: "/d/f.txt", RequestID: 1})
+	if !opened.IsLoading() {
+		t.Error("a stale open result must not end the current request")
+	}
+	if view := opened.View(); strings.Contains(view, "not a directory") {
+		t.Errorf("a stale open result must not surface its note, got %q", view)
+	}
+}
+
+func TestFailedNavigationShowsErrorWhileEntriesRemain(t *testing.T) {
+	t.Parallel()
+
+	m := resize(t, app.New("/d/sub"), 80, 24)
+	m = loaded(t, m, 1, "/d/sub", entriesAt("/d/sub", 6), nil)
+
+	m = pressBackspace(t, m)
+	m = loaded(t, m, 2, "/d", nil, errTestLoad)
+
+	entries := m.Entries()
+	if len(entries) != 6 {
+		t.Errorf("previous entries should remain visible after a failed load, got %d", len(entries))
+	}
+	if view := m.View(); !strings.Contains(view, "permission denied") {
+		t.Errorf("view should surface the navigation error, got %q", view)
+	}
+}
+
+func TestErrorStateIsSanitized(t *testing.T) {
+	t.Parallel()
+
+	m := resize(t, app.New("/d"), 80, 24)
+	m = loaded(t, m, 1, "/d", nil, errTestEscape)
+
+	view := m.View()
+	if strings.ContainsRune(view, '\x1b') {
+		t.Error("view must not contain raw escape characters from error strings")
+	}
+	if !strings.Contains(view, "[31mred") {
+		t.Errorf("sanitized error fragment should be visible, got %q", view)
 	}
 }

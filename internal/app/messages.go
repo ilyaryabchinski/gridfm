@@ -17,7 +17,9 @@ type DirectoryLoadedMsg struct {
 }
 
 // EntryNotDirectoryMsg reports that the user tried to enter a non-directory
-// entry. It is a nonfatal, expected outcome.
+// entry. It is a nonfatal, expected outcome. Like all load results it carries
+// the request ID so stale attempts are discarded.
 type EntryNotDirectoryMsg struct {
-	Path string
+	Path      string
+	RequestID uint64
 }

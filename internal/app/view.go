@@ -1,6 +1,8 @@
 package app
 
 import (
+	"strings"
+
 	"gridfm/internal/ui"
 
 	"github.com/charmbracelet/lipgloss"
@@ -54,34 +56,49 @@ func (m *Model) renderBody(l ui.Layout) string {
 }
 
 // renderViewport renders only the visible cards: rows scrollRow through
-// scrollRow+RowsVisible of the grid.
+// scrollRow+RowsVisible of the grid. Card gaps are rendered as literal
+// spacer cells so the visible geometry matches the layout calculations.
 func (m *Model) renderViewport(l ui.Layout) string {
-	nav := m.browser.Nav()
 	entries := m.browser.Entries
-	focus := nav.Focus()
+	focus := m.browser.Nav().Focus()
 
 	first := m.scrollRow * l.Columns
 	last := min(first+l.Columns*l.RowsVisible, len(entries))
 
-	rows := make([]string, 0, l.RowsVisible)
-	for start := first; start < last; start += l.Columns {
-		row := make([]string, 0, l.Columns)
-		for end := min(start+l.Columns, last); start < end; start++ {
-			row = append(row, ui.RenderCard(entries[start], l.Card, start == focus))
+	cardGap := strings.Repeat(" ", ui.CardGapX)
+	// A spacer block of full card height so JoinHorizontal keeps every card
+	// on the same baseline.
+	gapBlock := strings.TrimSuffix(strings.Repeat(cardGap+"\n", l.Card.Height), "\n")
+	rowGap := strings.Repeat(" ", l.ContentWidth)
+	rows := make([]string, 0, 2*l.RowsVisible-1)
+
+	for rowStart, r := first, 0; rowStart < last; rowStart, r = rowStart+l.Columns, r+1 {
+		if r > 0 {
+			rows = append(rows, rowGap)
 		}
-		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, row...))
+
+		end := min(rowStart+l.Columns, last)
+		blocks := make([]string, 0, 2*l.Columns-1)
+		for i := rowStart; i < end; i++ {
+			if i > rowStart {
+				blocks = append(blocks, gapBlock)
+			}
+			blocks = append(blocks, ui.RenderCard(entries[i], l.Card, i == focus))
+		}
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, blocks...))
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }
 
-// renderStateLine centers a single status message in the grid area.
+// renderStateLine centers a single status message in the grid area. The
+// message is sanitized because error strings can embed filesystem paths.
 func renderStateLine(l ui.Layout, message string) string {
 	return lipgloss.Place(
 		l.ContentWidth,
 		max(l.ContentHeight, 1),
 		lipgloss.Center,
 		lipgloss.Center,
-		lipgloss.NewStyle().Faint(true).Render(message),
+		lipgloss.NewStyle().Faint(true).Render(ui.SanitizeName(message)),
 	)
 }
