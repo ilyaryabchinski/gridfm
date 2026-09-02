@@ -761,7 +761,7 @@ Deliverables:
 - Go module and `gridfm` executable.
 - Bubble Tea alternate-screen application.
 - Read current directory.
-- Responsive card grid with placeholder type labels.
+- Responsive card grid with placeholder type labels and placeholder type colors (colors promoted from Milestone 1 into Milestone 0 during review; see section 4.5).
 - Arrow and Vim-style spatial navigation.
 - Enter directory and go to parent.
 - Resize with focus preservation.
@@ -783,7 +783,7 @@ Deliverables:
 
 - Places sidebar.
 - Header with breadcrumbs and history.
-- File-type colors and Unicode/Nerd Font icon modes.
+- File-type icon modes: Unicode and Nerd Font, building on the placeholder colors already shipped in Milestone 0.
 - Compact, normal, and detailed card zoom.
 - Sort menu.
 - Hidden-file toggle.
