@@ -78,6 +78,9 @@ func Classify(e browser.Entry) Category {
 	if e.IsDir {
 		return CategoryDir
 	}
+	if e.Symlink {
+		return CategoryOther
+	}
 	if strings.EqualFold(filepath.Ext(e.Name), ".go") {
 		return CategoryGo
 	}
@@ -88,14 +91,11 @@ func Classify(e browser.Entry) Category {
 	return CategoryOther
 }
 
-// Label returns the short placeholder type label for an entry. It is derived
-// entirely from the category so labels and colors can never diverge.
-func Label(e browser.Entry) string {
-	return categoryLabel[Classify(e)]
-}
-
-// RenderCard draws one fixed-size card. Size includes the border.
-func RenderCard(e browser.Entry, size CardSize, focused bool) string {
+// RenderCard draws one fixed-size card for the zoom level. The size comes
+// from the zoom; compact shows the name only, normal adds the type line,
+// and detailed adds size, permissions, and modification time.
+func RenderCard(e browser.Entry, zoom ZoomLevel, focused bool, icons IconMode) string {
+	size := zoom.CardSize()
 	innerWidth := size.Width - 2
 	innerHeight := size.Height - 2
 	if innerWidth < 1 {
@@ -106,18 +106,31 @@ func RenderCard(e browser.Entry, size CardSize, focused bool) string {
 	}
 
 	category := Classify(e)
-	label := categoryStyle(category).Render(Label(e))
-	name := categoryStyle(category).Bold(focused).Render(TruncateName(SanitizeName(e.Name), innerWidth))
+	glyph := icons.GlyphFor(e)
+	label := categoryStyle(category).Render(glyph)
+	name := categoryStyle(category).Bold(focused).
+		Render(TruncateName(SanitizeName(e.Name), innerWidth))
 
 	var lines []string
-	if innerHeight >= 3 {
-		lines = append(lines,
+	switch zoom {
+	case ZoomCompact:
+		// Icon and truncated name on a single content line.
+		lines = []string{name}
+	case ZoomDetailed:
+		// Name plus size, permissions, and modification time.
+		meta, when := EntryMeta(e)
+		lines = []string{
+			lipgloss.PlaceHorizontal(innerWidth, lipgloss.Center, label),
+			name,
+			lipgloss.NewStyle().Faint(true).Render(TruncateName(meta, innerWidth)),
+			lipgloss.NewStyle().Faint(true).Render(TruncateName(when, innerWidth)),
+		}
+	case ZoomNormal:
+		lines = []string{
 			lipgloss.PlaceHorizontal(innerWidth, lipgloss.Center, label),
 			"",
 			name,
-		)
-	} else {
-		lines = append(lines, name)
+		}
 	}
 
 	border := lipgloss.RoundedBorder()

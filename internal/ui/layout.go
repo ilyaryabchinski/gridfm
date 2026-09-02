@@ -1,13 +1,16 @@
 package ui
 
 // Card dimensions and gaps follow the initial sizing targets from the
-// design: normal cards are 14x5, compact 12x3, with 2 column and 1 row gaps.
-// They are tuned through interactive use, not API guarantees.
+// design: normal cards are 14x5, compact 12x3, detailed 18x6, with 2 column
+// and 1 row gaps. They are tuned through interactive use, not API
+// guarantees.
 const (
-	NormalCardWidth   = 14
-	NormalCardHeight  = 5
-	CompactCardWidth  = 12
-	CompactCardHeight = 3
+	NormalCardWidth    = 14
+	NormalCardHeight   = 5
+	CompactCardWidth   = 12
+	CompactCardHeight  = 3
+	DetailedCardWidth  = 18
+	DetailedCardHeight = 6
 
 	CardGapX = 2
 	CardGapY = 1
@@ -16,25 +19,45 @@ const (
 	StatusBarHeight = 1
 
 	// CompactHeightThreshold switches cards to compact mode below this many
-	// terminal rows.
+	// terminal rows regardless of the requested zoom.
 	CompactHeightThreshold = 20
+
+	// NarrowThreshold is the width below which the docked sidebar hides and
+	// becomes a toggleable overlay.
+	NarrowThreshold = 70
+
+	// SidebarWidth, MinSidebarWidth, and MaxSidebarWidth bound the docked
+	// sidebar width.
+	SidebarWidth    = 20
+	MinSidebarWidth = 16
+	MaxSidebarWidth = 28
 )
 
-// CardSize holds the outer cell dimensions of one card, border included.
-type CardSize struct {
-	Width  int
-	Height int
-}
-
-// Layout is the derived responsive geometry for one terminal size.
+// Layout is the derived responsive geometry for one terminal size, zoom,
+// and sidebar request.
 type Layout struct {
+	// Zoom is the effective zoom: the requested one unless the terminal is
+	// too short, which forces compact.
+	Zoom ZoomLevel
 	Card CardSize
 
 	Columns     int
 	RowsVisible int
 
-	// ContentWidth and ContentHeight are the cells available to the grid
-	// after the header and status bar.
+	// SidebarWidth is the docked sidebar width, 0 when the sidebar is
+	// hidden or narrow-overlay mode is active.
+	SidebarWidth int
+	// SidebarOverlay is true in narrow mode when the sidebar is toggled on:
+	// the grid keeps the full width and the sidebar floats above it.
+	SidebarOverlay bool
+	SidebarVisible bool
+
+	// GridWidth is the width available to the grid; the full terminal
+	// width except in docked-sidebar mode.
+	GridWidth int
+
+	// ContentWidth and ContentHeight are the cells available below the
+	// header and above the status bar.
 	ContentWidth  int
 	ContentHeight int
 
@@ -42,25 +65,45 @@ type Layout struct {
 	Usable bool
 }
 
-// ComputeLayout derives the grid geometry from terminal dimensions using the
-// formulas from the design:
-//
-//	columns = max(1, floor((width + gapX) / (cardWidth + gapX)))
-//	rowsVisible = max(1, floor((contentHeight + gapY) / (cardHeight + gapY)))
-func ComputeLayout(width, height int) Layout {
-	card := CardSize{Width: NormalCardWidth, Height: NormalCardHeight}
-	if height < CompactHeightThreshold {
-		card = CardSize{Width: CompactCardWidth, Height: CompactCardHeight}
+// SidebarWidthFor returns the docked sidebar width for a terminal width.
+// Wide layouts get the requested 20 cells, shrinking toward the 16-cell
+// floor on tight widths; zero means no docked sidebar.
+func SidebarWidthFor(width int) int {
+	if width < NarrowThreshold {
+		return 0
 	}
 
-	contentWidth := width
+	return min(max(width/4, MinSidebarWidth), SidebarWidth)
+}
+
+// ComputeLayout derives the grid geometry from terminal dimensions using
+// the formulas from the design:
+//
+//	columns = max(1, floor((gridWidth + gapX) / (cardWidth + gapX)))
+//	rowsVisible = max(1, floor((contentHeight + gapY) / (cardHeight + gapY)))
+func ComputeLayout(width, height int, zoom ZoomLevel, sidebarRequested bool) Layout {
+	narrow := width < NarrowThreshold
+	sidebarWidth := SidebarWidthFor(width)
+	sidebarVisible := sidebarRequested && sidebarWidth > 0
+	overlay := sidebarRequested && narrow
+
+	if height < CompactHeightThreshold {
+		zoom = ZoomCompact
+	}
+	card := zoom.CardSize()
+
+	gridWidth := width
+	if sidebarVisible {
+		gridWidth = width - sidebarWidth
+	}
+
 	contentHeight := height - HeaderHeight - StatusBarHeight
 
-	columns := (contentWidth + CardGapX) / (card.Width + CardGapX)
+	columns := (gridWidth + CardGapX) / (card.Width + CardGapX)
 	rows := (contentHeight + CardGapY) / (card.Height + CardGapY)
 
 	usable := columns >= 1 && rows >= 1 &&
-		contentWidth >= card.Width && contentHeight >= card.Height
+		gridWidth >= card.Width && contentHeight >= card.Height
 	if columns < 1 {
 		columns = 1
 	}
@@ -69,12 +112,17 @@ func ComputeLayout(width, height int) Layout {
 	}
 
 	return Layout{
-		Card:          card,
-		Columns:       columns,
-		RowsVisible:   rows,
-		ContentWidth:  contentWidth,
-		ContentHeight: contentHeight,
-		Usable:        usable,
+		Zoom:           zoom,
+		Card:           card,
+		Columns:        columns,
+		RowsVisible:    rows,
+		SidebarWidth:   sidebarWidth,
+		SidebarOverlay: overlay,
+		SidebarVisible: sidebarVisible,
+		GridWidth:      gridWidth,
+		ContentWidth:   width,
+		ContentHeight:  contentHeight,
+		Usable:         usable,
 	}
 }
 
@@ -90,7 +138,6 @@ func ScrollOffset(offset, focusRow, rowsVisible int) int {
 	case focusRow >= offset+rowsVisible:
 		return focusRow - rowsVisible + 1
 	default:
-
 		return offset
 	}
 }

@@ -9,34 +9,57 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// RenderHeader draws the top bar: the current location, truncated to the
-// terminal width.
-func RenderHeader(width int, path string) string {
-	return lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("12")).
-		Width(width).
-		MaxWidth(width).
-		Render(TruncateName(SanitizeName(path), width))
+// StatusInfo carries everything the status bar renders.
+type StatusInfo struct {
+	// Note is a transient message (errors, open results); it wins over
+	// indicators when present.
+	Note string
+	// Filter is the active incremental filter query, empty when inactive.
+	Filter string
+	// Mode is the input mode label, normally NORMAL.
+	Mode string
+	// Sort renders the active sort, e.g. "name asc".
+	Sort string
+	// HiddenOn reflects the hidden-file toggle.
+	HiddenOn bool
+	// Loading shows the in-flight indicator.
+	Loading bool
+	// Items and TotalItems are the visible and full entry counts; both are
+	// shown only when they differ.
+	Items      int
+	TotalItems int
 }
 
-// RenderStatusBar draws the bottom bar: mode, transient note, and item
-// count, right aligned.
-func RenderStatusBar(width int, itemCount int, loading bool, note string) string {
+// RenderStatusBar draws the bottom bar: mode and browsing indicators on the
+// left, item counts on the right.
+func RenderStatusBar(width int, info StatusInfo) string {
 	left := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")).
-		Render(" NORMAL")
-	if loading {
+		Render(" " + info.Mode)
+	if info.Loading {
 		left += lipgloss.NewStyle().Faint(true).Render(" loading…")
 	}
-	if note != "" {
-		left += lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render(" " + SanitizeName(note))
+	if info.Sort != "" {
+		left += lipgloss.NewStyle().Faint(true).Render(" " + info.Sort)
+	}
+	if info.HiddenOn {
+		left += lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render(" hidden on")
+	}
+	if info.Filter != "" {
+		left += lipgloss.NewStyle().Foreground(lipgloss.Color("6")).
+			Render(" /" + SanitizeName(info.Filter))
+	}
+	if info.Note != "" {
+		left += lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render(" " + SanitizeName(info.Note))
 	}
 
 	right := " "
-	if itemCount == 0 {
+	switch {
+	case info.Items == 0 && info.TotalItems == 0:
 		right += "empty"
-	} else {
-		right += strconv.Itoa(itemCount) + " items"
+	case info.Items != info.TotalItems:
+		right += strconv.Itoa(info.Items) + " of " + strconv.Itoa(info.TotalItems) + " items"
+	default:
+		right += strconv.Itoa(info.Items) + " items"
 	}
 	right += " "
 

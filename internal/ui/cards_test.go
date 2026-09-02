@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -25,6 +26,7 @@ func TestClassify(t *testing.T) {
 		{"archive", browser.Entry{Name: "source.zip"}, ui.CategoryArchive},
 		{"media", browser.Entry{Name: "song.mp3"}, ui.CategoryMedia},
 		{"text", browser.Entry{Name: "notes.md"}, ui.CategoryText},
+		{"symlink", browser.Entry{Name: "link", Symlink: true}, ui.CategoryOther},
 		{"other", browser.Entry{Name: "data.bin"}, ui.CategoryOther},
 	}
 	for _, tt := range tests {
@@ -38,41 +40,112 @@ func TestClassify(t *testing.T) {
 	}
 }
 
-func TestLabel(t *testing.T) {
+func TestIconModesProvideGlyphForEveryCategory(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		entry browser.Entry
-		want  string
-	}{
-		{browser.Entry{Name: "src", IsDir: true}, "DIR"},
-		{browser.Entry{Name: "main.go"}, "GO"},
-		{browser.Entry{Name: "logo.png"}, "IMG"},
-		{browser.Entry{Name: "source.zip"}, "ARC"},
-		{browser.Entry{Name: "notes.md"}, "TXT"},
-		{browser.Entry{Name: "data.bin"}, "FILE"},
+	categories := []ui.Category{
+		ui.CategoryDir, ui.CategoryGo, ui.CategoryImage, ui.CategoryArchive,
+		ui.CategoryMedia, ui.CategoryText, ui.CategoryOther,
 	}
-	for _, tt := range tests {
-		if got := ui.Label(tt.entry); got != tt.want {
-			t.Errorf("Label(%q) = %q, want %q", tt.entry.Name, got, tt.want)
+	modes := []ui.IconMode{ui.IconModeLabel, ui.IconModeUnicode, ui.IconModeNerdFont}
+
+	for _, mode := range modes {
+		for _, c := range categories {
+			if got := mode.Glyph(c); got == "" {
+				t.Errorf("mode %s has no glyph for category %v", mode, c)
+			}
 		}
+	}
+
+	// Modes are distinguishable: the three representations of a directory
+	// must all differ so a missing font is obvious.
+	if ui.IconModeLabel.Glyph(ui.CategoryDir) == ui.IconModeNerdFont.Glyph(ui.CategoryDir) {
+		t.Error("label and nerdfont glyphs should differ")
 	}
 }
 
-func TestRenderCardIsExactlyCardSize(t *testing.T) {
+func TestIconModeParseAndString(t *testing.T) {
 	t.Parallel()
 
-	size := ui.CardSize{Width: ui.NormalCardWidth, Height: ui.NormalCardHeight}
-	card := ui.RenderCard(browser.Entry{Name: "main.go", Path: filepath.Join("/d", "main.go")}, size, false)
-
-	lines := strings.Split(card, "\n")
-	if len(lines) != size.Height {
-		t.Fatalf("card has %d lines, want %d:\n%s", len(lines), size.Height, card)
-	}
-	for i, line := range lines {
-		if w := ansi.StringWidth(line); w != size.Width {
-			t.Errorf("card line %d is %d cells wide, want %d (line %q)", i, w, size.Width, line)
+	for _, mode := range []ui.IconMode{ui.IconModeLabel, ui.IconModeUnicode, ui.IconModeNerdFont} {
+		parsed, err := ui.ParseIconMode(mode.String())
+		if err != nil || parsed != mode {
+			t.Errorf("round trip of %s failed: %v, %v", mode, parsed, err)
 		}
+	}
+
+	_, err := ui.ParseIconMode("sparkles")
+	if err == nil {
+		t.Error("unknown icon mode should fail to parse")
+	}
+}
+
+func TestRenderCardMatchesZoomGeometry(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		zoom ui.ZoomLevel
+	}{
+		{ui.ZoomCompact}, {ui.ZoomNormal}, {ui.ZoomDetailed},
+	}
+	for _, tt := range tests {
+		t.Run(tt.zoom.String(), func(t *testing.T) {
+			t.Parallel()
+
+			size := tt.zoom.CardSize()
+			entry := browser.Entry{Name: "main.go", Path: filepath.Join("/d", "main.go")}
+			card := ui.RenderCard(entry, tt.zoom, false, ui.IconModeLabel)
+
+			lines := strings.Split(card, "\n")
+			if len(lines) != size.Height {
+				t.Fatalf("card has %d lines, want %d:\n%s", len(lines), size.Height, card)
+			}
+			for i, line := range lines {
+				if w := ansi.StringWidth(line); w != size.Width {
+					t.Errorf("card line %d is %d cells wide, want %d", i, w, size.Width)
+				}
+			}
+		})
+	}
+}
+
+func TestRenderDetailedCardShowsMetadata(t *testing.T) {
+	t.Parallel()
+
+	modTime := time.Unix(1700000000, 0)
+	entry := browser.Entry{
+		Name: "main.go", Path: "/d/main.go", Size: 4321,
+		Mode: 0o644, ModTime: modTime,
+	}
+
+	card := ui.RenderCard(entry, ui.ZoomDetailed, false, ui.IconModeLabel)
+	if !strings.Contains(card, "4.2K") {
+		t.Errorf("detailed card should show the human size, got:\n%s", card)
+	}
+	if !strings.Contains(card, "-rw-r--r--") {
+		t.Errorf("detailed card should show permissions, got:\n%s", card)
+	}
+	if !strings.Contains(card, modTime.Format("2006-01-02 15:04")) {
+		t.Errorf("detailed card should show the modification time, got:\n%s", card)
+	}
+}
+
+func TestRenderCardIconModesChangeGlyph(t *testing.T) {
+	t.Parallel()
+
+	entry := browser.Entry{Name: "src", Path: "/d/src", IsDir: true}
+	zoom := ui.ZoomNormal
+
+	label := ui.RenderCard(entry, zoom, false, ui.IconModeLabel)
+	unicode := ui.RenderCard(entry, zoom, false, ui.IconModeUnicode)
+	if label == unicode {
+		t.Error("label and unicode modes should render differently")
+	}
+	if !strings.Contains(label, "DIR") {
+		t.Errorf("label mode should contain the text label, got:\n%s", label)
+	}
+	if !strings.Contains(unicode, "📁") {
+		t.Errorf("unicode mode should contain the glyph, got:\n%s", unicode)
 	}
 }
 
@@ -80,8 +153,8 @@ func TestRenderCardFocusedDiffersFromUnfocused(t *testing.T) {
 	t.Parallel()
 
 	e := browser.Entry{Name: "main.go", Path: "/d/main.go"}
-	size := ui.CardSize{Width: ui.NormalCardWidth, Height: ui.NormalCardHeight}
-	if ui.RenderCard(e, size, false) == ui.RenderCard(e, size, true) {
+	zoom := ui.ZoomNormal
+	if ui.RenderCard(e, zoom, false, ui.IconModeLabel) == ui.RenderCard(e, zoom, true, ui.IconModeLabel) {
 		t.Error("focused and unfocused cards should render differently")
 	}
 }
@@ -89,8 +162,7 @@ func TestRenderCardFocusedDiffersFromUnfocused(t *testing.T) {
 func TestRenderCardSanitizesHostName(t *testing.T) {
 	t.Parallel()
 
-	size := ui.CardSize{Width: ui.NormalCardWidth, Height: ui.NormalCardHeight}
-	card := ui.RenderCard(browser.Entry{Name: "evil\x1b[31mname", Path: "/d/evil"}, size, false)
+	card := ui.RenderCard(browser.Entry{Name: "evil\x1b[31mname", Path: "/d/evil"}, ui.ZoomNormal, false, ui.IconModeLabel)
 	if strings.ContainsRune(card, '\x1b') {
 		t.Error("card must not contain raw escape characters from file names")
 	}
@@ -99,13 +171,38 @@ func TestRenderCardSanitizesHostName(t *testing.T) {
 	}
 }
 
-func TestRenderCardCompactSingleContentLine(t *testing.T) {
+func TestHumanBytes(t *testing.T) {
 	t.Parallel()
 
-	size := ui.CardSize{Width: ui.CompactCardWidth, Height: ui.CompactCardHeight}
-	card := ui.RenderCard(browser.Entry{Name: "notes.md", Path: "/d/notes.md"}, size, false)
-	lines := strings.Split(card, "\n")
-	if len(lines) != size.Height {
-		t.Fatalf("compact card has %d lines, want %d", len(lines), size.Height)
+	tests := []struct {
+		bytes int64
+		want  string
+	}{
+		{0, "0B"},
+		{512, "512B"},
+		{1023, "1023B"},
+		{1024, "1.0K"},
+		{4321, "4.2K"},
+		{1024 * 1024, "1.0M"},
+		{1536 * 1024 * 1024, "1.5G"},
+	}
+	for _, tt := range tests {
+		if got := ui.HumanBytes(tt.bytes); got != tt.want {
+			t.Errorf("HumanBytes(%d) = %q, want %q", tt.bytes, got, tt.want)
+		}
+	}
+}
+
+func TestTimestamp(t *testing.T) {
+	t.Parallel()
+
+	if got := ui.Timestamp(time.Time{}); got != "----  --:--" {
+		t.Errorf("Timestamp(zero) = %q, want dashes", got)
+	}
+
+	ts := time.Unix(1700000000, 0)
+	want := ts.Format("2006-01-02 15:04")
+	if got := ui.Timestamp(ts); got != want {
+		t.Errorf("Timestamp = %q, want %q", got, want)
 	}
 }
