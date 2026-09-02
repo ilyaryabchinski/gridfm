@@ -1,8 +1,12 @@
 package app
 
 import (
+	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 
+	"gridfm/internal/browser"
 	"gridfm/internal/ui"
 
 	"github.com/charmbracelet/lipgloss"
@@ -20,7 +24,7 @@ func (m *Model) View() string {
 		return ui.RenderTooSmall(m.width, m.height)
 	}
 
-	body := m.renderBody(l)
+	body := m.renderBody(l, m.bodyHeight(l))
 	if l.SidebarOverlay {
 		// The overlay panel keeps the full sidebar width even though no
 		// grid columns are reserved for it.
@@ -40,20 +44,36 @@ func (m *Model) View() string {
 		middle = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, body)
 	}
 
-	if m.sortOpen {
-		middle = m.renderSortMenu(l)
-	}
+	middle = m.withOverlay(l, middle)
 
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
+	rows := []string{
 		ui.RenderBreadcrumbs(m.width, m.browser.Path, m.home, m.browser.CanBack(), m.browser.CanForward()),
 		middle,
-		ui.RenderStatusBar(m.width, m.statusInfo(l)),
-	)
+	}
+
+	// The operation shelf is non-blocking: it takes one row when a job is
+	// running so the grid can keep rendering around it.
+	if m.opProgress != nil {
+		rows = append(rows, m.renderShelf(l))
+	}
+
+	rows = append(rows, ui.RenderStatusBar(m.width, m.statusInfo(l)))
+
+	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }
 
 func (m *Model) layout() ui.Layout {
 	return ui.ComputeLayout(m.width, m.height, m.zoom, m.sidebarOn)
+}
+
+// bodyHeight returns the cells available to the grid: one less while the
+// operation shelf row is showing.
+func (m *Model) bodyHeight(l ui.Layout) int {
+	if m.opProgress != nil {
+		return max(l.ContentHeight-1, 1)
+	}
+
+	return l.ContentHeight
 }
 
 func (m *Model) sidebarItems() []ui.SidebarItem {
@@ -65,36 +85,34 @@ func (m *Model) sidebarItems() []ui.SidebarItem {
 	return items
 }
 
+// withOverlay replaces the interface body with the active blocking
+// overlay, if any. Only one blocking overlay is active at a time.
+func (m *Model) withOverlay(l ui.Layout, body string) string {
+	switch {
+	case m.input != inputNone:
+		return m.renderInputOverlay(l)
+	case m.question != nil:
+		return m.renderConflictOverlay(l)
+	case m.confirm != confirmNone:
+		return m.renderConfirmOverlay(l)
+	case m.sortOpen:
+		return m.renderSortMenu(l)
+	case m.showResults && m.lastResult != nil:
+		return m.renderResultsOverlay(l)
+	}
+
+	return body
+}
+
 // statusInfo assembles the status bar contents for the current state.
 func (m *Model) statusInfo(l ui.Layout) ui.StatusInfo {
-	mode := "NORMAL"
-	if m.region == RegionSidebar {
-		mode = "PLACES"
-	}
-	if m.filterInput {
-		mode = "FILTER"
-	}
-	if m.sortOpen {
-		mode = "SORT"
-	}
-
-	filter := m.browser.Filter()
-	if m.filterInput {
-		filter += "▌"
-	}
-
-	sort := m.browser.SortMode().String() + " " + m.browser.SortOrder().String()
-	if l.Zoom != m.zoom {
-		sort += " (compact)"
-	}
-
 	visible := len(m.browser.Visible())
 
 	return ui.StatusInfo{
-		Mode:       mode,
-		Sort:       sort,
+		Mode:       m.modeLabel(),
+		Sort:       m.sortDisplay(l),
 		HiddenOn:   m.browser.ShowHidden(),
-		Filter:     filter,
+		Filter:     m.filterDisplay(),
 		Loading:    m.loading,
 		Note:       m.note,
 		Items:      visible,
@@ -102,8 +120,74 @@ func (m *Model) statusInfo(l ui.Layout) ui.StatusInfo {
 	}
 }
 
+// modeLabel names the surface that owns the keyboard.
+func (m *Model) modeLabel() string {
+	switch {
+	case m.input != inputNone:
+		return inputTitle(m.input)
+	case m.question != nil:
+		return "CONFLICT"
+	case m.confirm != confirmNone:
+		return "CONFIRM"
+	case m.sortOpen:
+		return "SORT"
+	case m.filterInput:
+		return "FILTER"
+	case m.region == RegionSidebar:
+		return "PLACES"
+	}
+
+	return m.mode.String()
+}
+
+// sortDisplay renders sort state plus staging and selection indicators.
+func (m *Model) sortDisplay(l ui.Layout) string {
+	sort := m.browser.SortMode().String() + " " + m.browser.SortOrder().String()
+	if l.Zoom != m.zoom {
+		sort += " (compact)"
+	}
+	if m.clipboard != ClipboardNone {
+		sort += " · " + strconv.Itoa(len(m.clipboardPath)) + " staged " + m.clipboard.String()
+	}
+	if selected := m.browser.SelectedCount(); selected > 0 {
+		sort += " · " + strconv.Itoa(selected) + " selected"
+	}
+
+	return sort
+}
+
+// filterDisplay renders the active query with its editing cursors.
+func (m *Model) filterDisplay() string {
+	filter := m.browser.Filter()
+	if m.filterInput {
+		filter += "▌"
+	}
+	if m.input != inputNone {
+		filter += m.inputValue + "▌"
+	}
+	if m.confirmTyped {
+		filter = "type yes: " + m.confirmInput + "▌"
+	}
+
+	return filter
+}
+
+// inputTitle names the active input overlay.
+func inputTitle(kind inputKind) string {
+	switch kind {
+	case inputCreateDir:
+		return "NEW DIR"
+	case inputRename:
+		return "RENAME"
+	case inputCreateFile, inputNone:
+		return "NEW FILE"
+	}
+
+	return "NEW FILE"
+}
+
 // renderBody draws the grid viewport or the full-body state message.
-func (m *Model) renderBody(l ui.Layout) string {
+func (m *Model) renderBody(l ui.Layout, bodyHeight int) string {
 	var body string
 	visible := len(m.browser.Visible())
 
@@ -121,8 +205,8 @@ func (m *Model) renderBody(l ui.Layout) string {
 	}
 
 	return lipgloss.NewStyle().
-		Height(l.ContentHeight).
-		MaxHeight(l.ContentHeight).
+		Height(bodyHeight).
+		MaxHeight(bodyHeight).
 		Width(l.GridWidth).
 		MaxWidth(l.GridWidth).
 		Render(body)
@@ -156,7 +240,7 @@ func (m *Model) renderViewport(l ui.Layout) string {
 			if i > rowStart {
 				blocks = append(blocks, gapBlock)
 			}
-			blocks = append(blocks, ui.RenderCard(entries[i], l.Zoom, i == focus, m.icons))
+			blocks = append(blocks, ui.RenderCard(entries[i], l.Zoom, m.cardState(entries[i], i == focus), m.icons))
 		}
 		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, blocks...))
 	}
@@ -198,6 +282,18 @@ func (m *Model) renderSortMenu(l ui.Layout) string {
 	return lipgloss.Place(l.ContentWidth, max(l.ContentHeight, 1), lipgloss.Center, lipgloss.Center, menu)
 }
 
+// cardState assembles the visual state of one card: focus, selection, and
+// the dimmed marker for entries staged for a move.
+func (m *Model) cardState(entry browser.Entry, focused bool) ui.CardState {
+	dimmed := m.clipboard == ClipboardMove && slices.Contains(m.clipboardPath, entry.Path)
+
+	return ui.CardState{
+		Focused:  focused,
+		Selected: m.browser.Selection().Has(entry.Path),
+		Dimmed:   dimmed,
+	}
+}
+
 // renderStateLine centers a single status message in the grid area. The
 // message is sanitized because error strings can embed filesystem paths.
 func renderStateLine(l ui.Layout, message string) string {
@@ -208,4 +304,128 @@ func renderStateLine(l ui.Layout, message string) string {
 		lipgloss.Center,
 		lipgloss.NewStyle().Faint(true).Render(ui.SanitizeName(message)),
 	)
+}
+
+// renderShelf draws the non-blocking operation progress line. It borrows
+// one row from the grid area while a job runs.
+func (m *Model) renderShelf(l ui.Layout) string {
+	p := m.opProgress
+	line := fmt.Sprintf(" %s %d/%d %s  (c cancels)",
+		p.kind, p.done, p.total, ui.SanitizeName(p.target))
+
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color("6")).
+		Width(l.ContentWidth).
+		MaxWidth(l.ContentWidth).
+		Render(ui.TruncateName(line, l.ContentWidth))
+}
+
+// renderInputOverlay centers the create/rename input.
+func (m *Model) renderInputOverlay(l ui.Layout) string {
+	title := inputTitle(m.input)
+	hint := "enter apply · ctrl+d switch · esc cancel"
+	if m.input == inputRename {
+		hint = "enter apply · esc cancel"
+	}
+
+	lines := []string{
+		lipgloss.NewStyle().Bold(true).Render(" " + title + " "),
+		inputBox(m.inputValue),
+		lipgloss.NewStyle().Faint(true).Render(hint),
+	}
+
+	return placeOverlayBox(l, lines)
+}
+
+// renderConfirmOverlay centers a confirmation dialog.
+func (m *Model) renderConfirmOverlay(l ui.Layout) string {
+	var title string
+	switch m.confirm {
+	case confirmTrash:
+		title = " MOVE TO TRASH "
+	case confirmDelete:
+		title = " DELETE PERMANENTLY "
+	case confirmQuit:
+		title = " QUIT? "
+	case confirmNone:
+		title = " CONFIRM "
+	}
+
+	lines := []string{lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("3")).Render(title)}
+	for _, detail := range m.confirmDetail {
+		lines = append(lines, ui.TruncateName(ui.SanitizeName(detail), 56))
+	}
+
+	if m.confirmTyped {
+		lines = append(lines, "",
+			inputBox("yes: "+m.confirmInput),
+			lipgloss.NewStyle().Faint(true).Render("type yes to confirm · esc cancels"))
+	} else {
+		lines = append(lines, "",
+			lipgloss.NewStyle().Faint(true).Render("y confirm · n/esc cancel"))
+	}
+
+	return placeOverlayBox(l, lines)
+}
+
+// renderConflictOverlay centers the conflict question for the running job.
+func (m *Model) renderConflictOverlay(l ui.Layout) string {
+	lines := make([]string, 0, 6)
+	lines = append(lines,
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("3")).Render(" TARGET EXISTS "),
+		ui.TruncateName(ui.SanitizeName(m.question.target), 56),
+		"",
+		"s skip · r replace · n rename as copy",
+	)
+	state := "off"
+	if m.applyAll {
+		state = "ON for the rest of this job"
+	}
+	lines = append(lines,
+		lipgloss.NewStyle().Faint(true).Render("a apply to all: "+state),
+		lipgloss.NewStyle().Faint(true).Render("esc aborts the operation"))
+
+	return placeOverlayBox(l, lines)
+}
+
+// renderResultsOverlay lists what a finished operation failed on.
+func (m *Model) renderResultsOverlay(l ui.Layout) string {
+	result := m.lastResult
+	lines := make([]string, 0, len(result.Failures)+4)
+	lines = append(lines,
+		lipgloss.NewStyle().Bold(true).Render(" "+resultSummary(*result)+" "),
+		"",
+	)
+
+	if len(result.Failures) == 0 {
+		lines = append(lines, lipgloss.NewStyle().Faint(true).Render("no failures"))
+	}
+	for _, failure := range result.Failures {
+		line := ui.SanitizeName(failure.Err.Error())
+		lines = append(lines, ui.TruncateName(line, 64))
+	}
+
+	lines = append(lines, "", lipgloss.NewStyle().Faint(true).Render("e/esc close"))
+
+	return placeOverlayBox(l, lines)
+}
+
+// inputBox renders a one-line text field with a block cursor.
+func inputBox(value string) string {
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("8")).
+		Padding(0, 1).
+		Render(value + "▌")
+}
+
+// placeOverlayBox centers a bordered dialog in the grid area.
+func placeOverlayBox(l ui.Layout, lines []string) string {
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("8")).
+		Padding(0, 1).
+		Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
+
+	return lipgloss.Place(l.ContentWidth, max(l.ContentHeight, 1), lipgloss.Center, lipgloss.Center, box)
 }

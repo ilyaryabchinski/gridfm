@@ -6,6 +6,7 @@ package app
 
 import (
 	"gridfm/internal/browser"
+	"gridfm/internal/operations"
 	"gridfm/internal/places"
 )
 
@@ -44,4 +45,11 @@ type OpenFinishedMsg struct {
 	Path      string
 	Err       error
 	RequestID uint64
+}
+
+// OperationEventMsg wraps one event from the operation manager: progress,
+// a conflict question, or a finished result. The listener command re-arms
+// after every delivery so exactly one listener blocks at a time.
+type OperationEventMsg struct {
+	Event operations.Event
 }

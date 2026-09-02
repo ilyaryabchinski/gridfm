@@ -2,8 +2,10 @@ package app
 
 import (
 	"path/filepath"
+	"strconv"
 
 	"gridfm/internal/browser"
+	"gridfm/internal/operations"
 	"gridfm/internal/ui"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -66,11 +68,69 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case OpenFinishedMsg:
 		return m.applyOpenFinished(msg)
 
+	case OperationEventMsg:
+		return m.applyOperationEvent(msg.Event)
+
 	case tea.KeyMsg:
 		return m.handleKey(msg.String())
 	}
 
 	return m, nil
+}
+
+// applyOperationEvent consumes one operation manager event and re-arms the
+// listener.
+func (m *Model) applyOperationEvent(ev operations.Event) (tea.Model, tea.Cmd) {
+	switch e := ev.(type) {
+	case operations.ProgressEvent:
+		m.opProgress = &opProgress{kind: e.Kind, done: e.Done, total: e.Total, target: e.Target}
+
+	case operations.QuestionEvent:
+		// Only one blocking overlay may be active; the question wins.
+		m.sortOpen = false
+		m.filterInput = false
+		m.input = inputNone
+		m.confirm = confirmNone
+		m.showResults = false
+		m.question = &pendingQuestion{answerCh: e.AnswerCh, target: e.Target}
+
+	case operations.FinishedEvent:
+		m.opProgress = nil
+		m.question = nil
+		result := e.Result
+		m.lastResult = &result
+		m.showResults = len(result.Failures) > 0
+		m.note = resultSummary(result)
+		if !m.loading {
+			// The mutation may have changed the browsed directory; refresh
+			// unless a navigation is already fetching fresher state.
+			return m, loadDirectoryCmd(m.startRequest(), m.browser.Path)
+		}
+	}
+
+	return m, listenOperations(m.ops)
+}
+
+// resultSummary renders the accurate outcome of a finished operation.
+func resultSummary(r operations.Result) string {
+	summary := r.Kind.String() + ": " +
+		itoaPlural(r.Succeeded, "ok") + ", " +
+		itoaPlural(r.Skipped, "skipped") + ", " +
+		itoaPlural(r.Failed, "failed")
+	if r.Cancelled {
+		summary = "cancelled " + summary
+	}
+
+	return summary
+}
+
+func itoaPlural(n int, word string) string {
+	plain := strconv.Itoa(n) + " " + word
+	if n == 1 {
+		return plain
+	}
+
+	return plain + "s"
 }
 
 func (m *Model) applyDirectoryLoaded(msg DirectoryLoadedMsg) {
@@ -149,6 +209,12 @@ func (m *Model) syncGridColumns() {
 // the sort menu overlay, the filter input, or normal browsing.
 func (m *Model) handleKey(key string) (tea.Model, tea.Cmd) {
 	switch {
+	case m.input != inputNone:
+		return m.handleInputOverlayKeys(key)
+	case m.question != nil:
+		return m.handleQuestionKeys(key)
+	case m.confirm != confirmNone:
+		return m.handleConfirmKeys(key)
 	case m.sortOpen:
 		return m.handleSortKeys(key)
 	case m.filterInput:
@@ -163,8 +229,10 @@ func (m *Model) handleKey(key string) (tea.Model, tea.Cmd) {
 // delegates to the display and entry handlers.
 func (m *Model) handleNormalKeys(key string) (tea.Model, tea.Cmd) {
 	switch key {
-	case "q", "ctrl+c":
+	case "ctrl+c":
 		return m, tea.Quit
+	case "q":
+		return m.requestQuit()
 	case keyTab:
 		return m.switchRegion(), nil
 	case keyEsc:
@@ -173,7 +241,86 @@ func (m *Model) handleNormalKeys(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if handler, ok := normalKeyHandlers[key]; ok {
+		return handler(m)
+	}
+
 	return m.handleDisplayKeys(key)
+}
+
+// normalKeyHandlers maps the browsing keys that act on entries and their
+// selection: toggling, range mode, staging, mutations, and results.
+//
+//nolint:gochecknoglobals // static key vocabulary, never mutated
+var normalKeyHandlers = map[string]func(*Model) (tea.Model, tea.Cmd){
+	" ": func(m *Model) (tea.Model, tea.Cmd) {
+		if m.region == RegionGrid {
+			m.browser.ToggleFocused()
+		}
+
+		return m, nil
+	},
+	"v": (*Model).toggleSelectMode,
+	"ctrl+a": func(m *Model) (tea.Model, tea.Cmd) {
+		if m.region == RegionGrid {
+			m.browser.SelectAllVisible()
+		}
+
+		return m, nil
+	},
+	"y": func(m *Model) (tea.Model, tea.Cmd) { return m.stageClipboard(ClipboardCopy) },
+	"x": func(m *Model) (tea.Model, tea.Cmd) { return m.stageClipboard(ClipboardMove) },
+	"p": (*Model).pasteClipboard,
+	"n": (*Model).openCreateInput,
+	"R": (*Model).openRenameInput,
+	"d": func(m *Model) (tea.Model, tea.Cmd) { return m.confirmMutation(confirmTrash) },
+	"D": func(m *Model) (tea.Model, tea.Cmd) { return m.confirmMutation(confirmDelete) },
+	"c": func(m *Model) (tea.Model, tea.Cmd) {
+		m.ops.CancelActive()
+
+		return m, nil
+	},
+	"e": func(m *Model) (tea.Model, tea.Cmd) {
+		if m.lastResult != nil {
+			m.showResults = !m.showResults
+		}
+
+		return m, nil
+	},
+}
+
+// requestQuit quits immediately when idle, or asks for confirmation while
+// operations are running so quitting is always an explicit decision.
+func (m *Model) requestQuit() (tea.Model, tea.Cmd) {
+	if !m.ops.Busy() {
+		return m, tea.Quit
+	}
+
+	m.confirm = confirmQuit
+	m.confirmTyped = false
+	m.confirmInput = ""
+	m.confirmDetail = []string{"operations are still running"}
+
+	return m, nil
+}
+
+// toggleSelectMode enters or leaves range-selection mode. Entering pins an
+// anchor at the focused entry; movement then extends the selection.
+func (m *Model) toggleSelectMode() (tea.Model, tea.Cmd) {
+	if m.region != RegionGrid {
+		return m, nil
+	}
+	if m.mode == ModeSelect {
+		m.mode = ModeBrowse
+
+		return m, nil
+	}
+
+	m.mode = ModeSelect
+	m.selectAnchor = m.browser.FocusIndex()
+	m.browser.ToggleFocused()
+
+	return m, nil
 }
 
 // handleDisplayKeys owns interface visibility and presentation: sidebar
@@ -313,6 +460,9 @@ func (m *Model) handleMovement(key string) (tea.Model, tea.Cmd) {
 
 	moved, parentShortcut := m.moveFocus(key)
 	if moved {
+		if m.mode == ModeSelect {
+			m.browser.SelectRange(m.selectAnchor, m.browser.FocusIndex())
+		}
 		m.clampScroll()
 
 		return m, nil

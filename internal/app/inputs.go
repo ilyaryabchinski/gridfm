@@ -76,7 +76,8 @@ func (m *Model) handleFilterKeys(key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// escalateClear clears transient state one layer at a time.
+// escalateClear clears transient state one layer at a time: notes, then
+// the filter, then select mode, then the selection itself.
 func (m *Model) escalateClear() {
 	switch {
 	case m.note != "":
@@ -84,5 +85,9 @@ func (m *Model) escalateClear() {
 	case m.browser.Filter() != "":
 		m.browser.SetFilter("")
 		m.filterInput = false
+	case m.mode == ModeSelect:
+		m.mode = ModeBrowse
+	case m.browser.SelectedCount() > 0:
+		m.browser.ClearSelection()
 	}
 }

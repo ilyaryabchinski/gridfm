@@ -2,6 +2,7 @@ package app
 
 import (
 	"gridfm/internal/browser"
+	"gridfm/internal/operations"
 	"gridfm/internal/places"
 	"gridfm/internal/ui"
 
@@ -17,9 +18,72 @@ const (
 	RegionSidebar
 )
 
+// Mode is the browsing mode: normal navigation or range selection.
+type Mode int
+
+// Browsing modes: normal navigation and range-oriented selection.
+const (
+	ModeBrowse Mode = iota
+	ModeSelect
+)
+
+// String renders the mode for the status bar.
+func (m Mode) String() string {
+	if m == ModeSelect {
+		return "SELECT"
+	}
+
+	return "NORMAL"
+}
+
+// ClipboardKind records what a paste will do with the staged paths.
+type ClipboardKind int
+
+// Clipboard kinds: what the next paste will do with the staged paths.
+const (
+	ClipboardNone ClipboardKind = iota
+	ClipboardCopy
+	ClipboardMove
+)
+
+// inputKind identifies the active text input overlay, if any.
+type inputKind int
+
+const (
+	inputNone inputKind = iota
+	inputCreateFile
+	inputCreateDir
+	inputRename
+)
+
+// confirmKind identifies the active confirmation overlay, if any.
+type confirmKind int
+
+const (
+	confirmNone confirmKind = iota
+	confirmTrash
+	confirmDelete
+	confirmQuit
+)
+
 // Options are the start-up configuration switches.
 type Options struct {
 	Icons ui.IconMode
+}
+
+// pendingQuestion holds an open conflict question from the operation
+// manager until the user answers it in the overlay.
+type pendingQuestion struct {
+	answerCh chan<- operations.Answer
+	target   string
+}
+
+// opProgress is the display state of the running operation.
+type opProgress struct {
+	kind   operations.Kind
+	done   int
+	total  int
+	target string
 }
 
 // Model is the top-level Bubble Tea model. It owns domain state (the
@@ -36,12 +100,41 @@ type Model struct {
 	placeIdx  int
 	home      string
 
-	// Sort menu state: the only blocking overlay in Milestone 1.
+	// Sort menu state: one of the blocking overlays.
 	sortOpen   bool
 	sortCursor int
 
 	// Filter input state: when active, printable keys extend the query.
 	filterInput bool
+
+	// Mutation state.
+	mode          Mode
+	selectAnchor  int
+	clipboard     ClipboardKind
+	clipboardPath []string
+
+	// Operation pipeline.
+	ops        *operations.Manager
+	opProgress *opProgress
+	lastResult *operations.Result
+
+	// Input overlay state.
+	input       inputKind
+	inputValue  string
+	inputTarget string
+
+	// Confirmation overlay state.
+	confirm       confirmKind
+	confirmDetail []string
+	confirmTyped  bool
+	confirmInput  string
+
+	// Conflict overlay state.
+	question *pendingQuestion
+	applyAll bool
+
+	// Results overlay state.
+	showResults bool
 
 	width     int
 	height    int
@@ -64,6 +157,7 @@ func New(startPath string, opts Options) *Model {
 		sidebarOn: true,
 		requestID: 1,
 		loading:   true,
+		ops:       operations.NewManager(),
 	}
 }
 
@@ -72,6 +166,7 @@ func (m *Model) Init() tea.Cmd {
 	return tea.Batch(
 		loadDirectoryCmd(m.requestID, m.browser.Path),
 		loadPlacesCmd(),
+		listenOperations(m.ops),
 	)
 }
 
@@ -126,9 +221,62 @@ func (m *Model) SelectedPlace() (places.Place, bool) {
 	return m.places[m.placeIdx], true
 }
 
-// startRequest bumps the request counter and resets transient load state,
-// invalidating any in-flight result. Callers build their command with the
-// returned ID.
+// Mode returns the active browsing mode.
+func (m *Model) Mode() Mode { return m.mode }
+
+// SelectedCount returns the number of selected paths across directories.
+func (m *Model) SelectedCount() int { return m.browser.SelectedCount() }
+
+// ClipboardKind returns what a paste would do.
+func (m *Model) ClipboardKind() ClipboardKind { return m.clipboard }
+
+// ClipboardPaths returns the staged paths.
+func (m *Model) ClipboardPaths() []string { return m.clipboardPath }
+
+// Busy reports whether an operation is queued or running.
+func (m *Model) Busy() bool { return m.ops.Busy() }
+
+// Progress returns the running operation's display state, if any.
+func (m *Model) Progress() (operations.Kind, int, int, bool) {
+	if m.opProgress == nil {
+		return 0, 0, 0, false
+	}
+
+	return m.opProgress.kind, m.opProgress.done, m.opProgress.total, true
+}
+
+// LastResult returns the most recent finished operation result, if any.
+func (m *Model) LastResult() *operations.Result { return m.lastResult }
+
+// listenOperations subscribes to the operation event stream. Update re-arms
+// it after every event so exactly one listener blocks at a time.
+func listenOperations(ops *operations.Manager) tea.Cmd {
+	return func() tea.Msg {
+		ev, ok := <-ops.Events()
+		if !ok {
+			return nil
+		}
+
+		return OperationEventMsg{Event: ev}
+	}
+}
+
+// DrainEvents consumes every pending operation event so the serial worker
+// can proceed. The Bubble Tea listener normally does this; it is useful for
+// driving the model from tests and for programmatic use.
+func (m *Model) DrainEvents() {
+	for {
+		select {
+		case <-m.ops.Events():
+		default:
+			return
+		}
+	}
+}
+
+// startRequest bumps the browse request counter and resets transient load
+// state, invalidating any in-flight result. Callers build their command
+// with the returned ID.
 func (m *Model) startRequest() uint64 {
 	m.requestID++
 	m.loading = true
