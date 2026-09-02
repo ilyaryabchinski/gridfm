@@ -7,14 +7,23 @@ import (
 	"path/filepath"
 )
 
-// Browser couples a directory location with its entries and the spatial grid
-// used to navigate them. It is a plain data structure; the application layer
-// drives it from the update loop and rendering reads it without mutating.
+// Browser couples a directory location with its entries, the derived
+// visible view, the spatial grid, and location history. It is a plain data
+// structure; the application layer drives it from the update loop and
+// rendering reads it without mutating.
 type Browser struct {
 	Path    string
 	Entries []Entry
 
-	grid Grid
+	grid       Grid
+	visible    []Entry
+	filter     string
+	showHidden bool
+	sortMode   SortMode
+	sortOrder  SortOrder
+
+	history    []string
+	historyPos int
 }
 
 // New returns a browser rooted at path with no entries loaded yet.
@@ -61,24 +70,25 @@ func (b *Browser) End() bool { return b.grid.End() }
 // re-deriving the preferred column from its new position.
 func (b *Browser) SetColumns(columns int) { b.grid.SetColumns(columns) }
 
-// FocusIndex returns the focused index, or 0 for an empty browser. It is
-// the read-only geometry rendering needs to mark the focused card.
+// FocusIndex returns the focused index into the visible view, or 0 for an
+// empty browser. It is the read-only geometry rendering needs to mark the
+// focused card.
 func (b *Browser) FocusIndex() int { return b.grid.Focus() }
 
 // FocusedRow returns the row of the focused entry.
 func (b *Browser) FocusedRow() int { return b.grid.FocusedRow() }
 
-// SetFocusIndex moves focus to a specific index, clamped to the valid
-// range. Callers should prefer FocusEntry for identity-based restoration.
+// SetFocusIndex moves focus to a specific visible index, clamped to the
+// valid range.
 func (b *Browser) SetFocusIndex(index int) { b.grid.SetFocus(index) }
 
-// Focused returns the focused entry, if any.
+// Focused returns the focused entry from the visible view, if any.
 func (b *Browser) Focused() (Entry, bool) {
-	if len(b.Entries) == 0 || b.grid.Focus() >= len(b.Entries) {
+	if b.FocusIndex() >= len(b.visible) {
 		return Entry{}, false
 	}
 
-	return b.Entries[b.grid.Focus()], true
+	return b.visible[b.FocusIndex()], true
 }
 
 // FocusedPath returns the full path of the focused entry, or an empty string
@@ -92,30 +102,75 @@ func (b *Browser) FocusedPath() string {
 	return e.Path
 }
 
+// Visible returns the entries surviving the hidden-file rule and the
+// active filter, in sorted order.
+func (b *Browser) Visible() []Entry { return b.visible }
+
+// Filter returns the active incremental filter query.
+func (b *Browser) Filter() string { return b.filter }
+
+// ShowHidden reports whether hidden (dot-prefixed) entries are visible.
+func (b *Browser) ShowHidden() bool { return b.showHidden }
+
+// SortMode returns the active sort mode.
+func (b *Browser) SortMode() SortMode { return b.sortMode }
+
+// SortOrder returns the active sort order.
+func (b *Browser) SortOrder() SortOrder { return b.sortOrder }
+
+// SetSort changes the ordering and re-derives the visible view.
+func (b *Browser) SetSort(mode SortMode, order SortOrder) {
+	b.sortMode = mode
+	b.sortOrder = order
+	SortEntries(b.Entries, mode, order)
+	b.rebuild(b.grid.Focus())
+}
+
+// SetFilter changes the incremental filter and re-derives the visible view.
+// Focus is preserved by entry identity when the focused entry survives.
+func (b *Browser) SetFilter(query string) {
+	b.filter = query
+	b.rebuild(b.grid.Focus())
+}
+
+// SetShowHidden toggles dot-prefixed entries and re-derives the visible
+// view. Focus is preserved by entry identity when the focused entry
+// survives.
+func (b *Browser) SetShowHidden(show bool) {
+	b.showHidden = show
+	b.rebuild(b.grid.Focus())
+}
+
 // SetEntries applies a directory listing. Focus is preserved by entry
 // identity when the path is unchanged: the previously focused entry stays
 // focused if it still exists, otherwise focus falls back to the nearest
-// surviving index. Navigating to a different path focuses the first entry.
+// surviving index. Navigating to a different path focuses the first entry
+// and records the location in history; confirming a back or forward move
+// updates the history position instead of pushing a duplicate.
 func (b *Browser) SetEntries(path string, entries []Entry) {
 	sameDir := path == b.Path
 	previousFocus := b.grid.Focus()
-	previousPath := b.FocusedPath()
 
+	b.sortEntries(entries)
 	b.Path = path
 	b.Entries = entries
-	b.grid = NewGrid(len(entries), max(b.grid.Columns(), 1))
+	if sameDir {
+		// A refresh falls back to the nearest surviving index.
+		b.rebuild(previousFocus)
+	} else {
+		// A new location focuses the first entry.
+		b.rebuild(0)
+	}
 
-	if !sameDir {
-		return
+	if !sameDir || len(b.history) == 0 {
+		b.recordHistory(path)
 	}
-	if previousPath != "" && b.focusEntry(previousPath) {
-		return
-	}
-	b.grid.SetFocus(min(previousFocus, max(len(entries)-1, 0)))
 }
 
-func (b *Browser) focusEntry(path string) bool {
-	for i, e := range b.Entries {
+// FocusEntryInVisible moves focus to the visible entry at path. It reports
+// whether the entry was found.
+func (b *Browser) FocusEntryInVisible(path string) bool {
+	for i, e := range b.visible {
 		if e.Path == path {
 			b.grid.SetFocus(i)
 
@@ -126,28 +181,105 @@ func (b *Browser) focusEntry(path string) bool {
 	return false
 }
 
+// CanBack reports whether there is a location behind the current one.
+func (b *Browser) CanBack() bool { return b.historyPos > 1 }
+
+// CanForward reports whether there is a location ahead of the current one.
+func (b *Browser) CanForward() bool { return b.historyPos < len(b.history) }
+
+// Back returns the previous location and moves the history position to it.
+// The caller confirms the move by loading that path; the resulting
+// SetEntries call updates state without pushing a duplicate.
+func (b *Browser) Back() (string, bool) {
+	if !b.CanBack() {
+		return "", false
+	}
+
+	b.historyPos--
+
+	return b.history[b.historyPos-1], true
+}
+
+// Forward returns the next location and moves the history position to it,
+// mirroring Back.
+func (b *Browser) Forward() (string, bool) {
+	if !b.CanForward() {
+		return "", false
+	}
+
+	b.historyPos++
+
+	return b.history[b.historyPos-1], true
+}
+
+func (b *Browser) sortEntries(entries []Entry) {
+	SortEntries(entries, b.sortMode, b.sortOrder)
+}
+
+// rebuild re-derives the visible view from the entry list and the current
+// filter state, keeping the focused entry by identity when it survives and
+// otherwise falling back to the given index (clamped to the valid range).
+func (b *Browser) rebuild(fallback int) {
+	previousPath := b.FocusedPath()
+	b.visible = FilterEntries(b.Entries, b.showHidden, b.filter)
+	b.grid.SetCount(len(b.visible))
+	b.restoreFocus(previousPath, fallback)
+}
+
+func (b *Browser) restoreFocus(previousPath string, previousIndex int) {
+	if previousPath != "" && b.FocusEntryInVisible(previousPath) {
+		return
+	}
+	b.grid.SetFocus(min(previousIndex, max(len(b.visible)-1, 0)))
+}
+
+// recordHistory pushes a newly confirmed location, dropping any forward
+// entries. The history position indexes one past the current location, so
+// confirming a back or forward move keeps the position set earlier instead
+// of pushing a duplicate.
+func (b *Browser) recordHistory(path string) {
+	if len(b.history) > 0 && b.history[b.historyPos-1] == path {
+		return
+	}
+
+	b.history = append(b.history[:b.historyPos], path)
+	b.historyPos = len(b.history)
+}
+
 // ReadDir enumerates the directory at path and returns entries in
-// deterministic order. Only cheap metadata is collected: symlinks are
-// reported as non-directories here and resolved when explicitly opened.
+// deterministic order under the current sort. Only cheap metadata is
+// collected; symlinks are reported as non-directories here and resolved
+// when explicitly opened.
 func ReadDir(path string) ([]Entry, error) {
 	dirents, err := os.ReadDir(path)
 	if err != nil {
 		return nil, fmt.Errorf("read directory %q: %w", path, err)
 	}
+
 	entries := make([]Entry, 0, len(dirents))
 
 	for _, d := range dirents {
-		if d.Type()&fs.ModeSymlink != 0 {
-			// Keep symlinks cheap to load; entering one resolves it.
-			entries = append(entries, Entry{Name: d.Name(), Path: filepath.Join(path, d.Name())})
-
-			continue
+		entry := Entry{
+			Name:    d.Name(),
+			Path:    filepath.Join(path, d.Name()),
+			IsDir:   d.IsDir(),
+			Symlink: d.Type()&fs.ModeSymlink != 0,
+			Mode:    d.Type(),
+		}
+		// Keep symlinks cheap to load; entering one resolves it.
+		if !entry.Symlink {
+			info, infoErr := d.Info()
+			if infoErr == nil {
+				entry.Size = info.Size()
+				entry.ModTime = info.ModTime()
+				entry.Mode = info.Mode()
+			}
 		}
 
-		entries = append(entries, Entry{Name: d.Name(), Path: filepath.Join(path, d.Name()), IsDir: d.IsDir()})
+		entries = append(entries, entry)
 	}
 
-	SortEntries(entries)
+	SortEntries(entries, SortByName, SortAscending)
 
 	return entries, nil
 }
