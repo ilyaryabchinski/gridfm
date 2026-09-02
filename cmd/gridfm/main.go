@@ -3,6 +3,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,19 +11,31 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"gridfm/internal/app"
+	"gridfm/internal/ui"
 )
 
 func main() {
+	icons := flag.String("icons", ui.IconModeUnicode.String(),
+		"file type representation: labels, unicode, or nerdfont")
+
+	flag.Parse()
+
 	start := "."
-	if len(os.Args) > 1 {
-		start = os.Args[1]
+	if flag.NArg() > 0 {
+		start = flag.Arg(0)
 	}
+
+	mode, err := ui.ParseIconMode(*icons)
+	if err != nil {
+		fatalf("%v (want labels, unicode, or nerdfont)", err)
+	}
+
 	path, err := filepath.Abs(start)
 	if err != nil {
 		fatalf("resolve start location: %v", err)
 	}
 
-	program := tea.NewProgram(app.New(path), tea.WithAltScreen())
+	program := tea.NewProgram(app.New(path, app.Options{Icons: mode}), tea.WithAltScreen())
 
 	_, err = program.Run()
 	if err != nil {
