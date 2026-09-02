@@ -28,6 +28,8 @@ type Browser struct {
 	// position commits only when the matching load confirms it, so a
 	// failed traversal leaves the cursor consistent for a retry.
 	pendingStep histStep
+
+	selection *Selection
 }
 
 // histStep is the direction of an in-flight history traversal.
@@ -41,7 +43,7 @@ const (
 
 // New returns a browser rooted at path with no entries loaded yet.
 func New(path string) Browser {
-	return Browser{Path: path, grid: NewGrid(0, 1)}
+	return Browser{Path: path, grid: NewGrid(0, 1), selection: NewSelection()}
 }
 
 // The navigation methods below are the only way to move the grid: the
