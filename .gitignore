@@ -2,3 +2,6 @@ bin/
 dist/
 *.test
 coverage.out
+
+# local builds
+/gridfm
