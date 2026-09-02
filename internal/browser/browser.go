@@ -22,8 +22,55 @@ func New(path string) Browser {
 	return Browser{Path: path, grid: NewGrid(0, 1)}
 }
 
-// Nav exposes the spatial grid for navigation. Rendering must not mutate it.
-func (b *Browser) Nav() *Grid { return &b.grid }
+// The navigation methods below are the only way to move the grid: the
+// spatial model stays encapsulated so callers express intent (move left,
+// page down) instead of reaching into mutable browser state.
+
+// Left moves focus one entry left without wrapping across rows. It reports
+// whether focus changed.
+func (b *Browser) Left() bool { return b.grid.Left() }
+
+// Right moves focus one entry right without wrapping across rows. It reports
+// whether focus changed.
+func (b *Browser) Right() bool { return b.grid.Right() }
+
+// Up moves focus to the preferred column of the row above. It reports
+// whether focus changed.
+func (b *Browser) Up() bool { return b.grid.Up() }
+
+// Down moves focus toward the preferred column of the row below, clamping
+// to the nearest valid column in a shorter last row. It reports whether
+// focus changed.
+func (b *Browser) Down() bool { return b.grid.Down() }
+
+// PageUp moves focus up by the given number of rows, preserving the
+// preferred column. It reports whether focus changed.
+func (b *Browser) PageUp(rows int) bool { return b.grid.PageUp(rows) }
+
+// PageDown moves focus down by the given number of rows, preserving the
+// preferred column. It reports whether focus changed.
+func (b *Browser) PageDown(rows int) bool { return b.grid.PageDown(rows) }
+
+// Home moves focus to the first entry. It reports whether focus changed.
+func (b *Browser) Home() bool { return b.grid.Home() }
+
+// End moves focus to the last entry. It reports whether focus changed.
+func (b *Browser) End() bool { return b.grid.End() }
+
+// SetColumns resizes the navigation grid, preserving the focused entry and
+// re-deriving the preferred column from its new position.
+func (b *Browser) SetColumns(columns int) { b.grid.SetColumns(columns) }
+
+// FocusIndex returns the focused index, or 0 for an empty browser. It is
+// the read-only geometry rendering needs to mark the focused card.
+func (b *Browser) FocusIndex() int { return b.grid.Focus() }
+
+// FocusedRow returns the row of the focused entry.
+func (b *Browser) FocusedRow() int { return b.grid.FocusedRow() }
+
+// SetFocusIndex moves focus to a specific index, clamped to the valid
+// range. Callers should prefer FocusEntry for identity-based restoration.
+func (b *Browser) SetFocusIndex(index int) { b.grid.SetFocus(index) }
 
 // Focused returns the focused entry, if any.
 func (b *Browser) Focused() (Entry, bool) {

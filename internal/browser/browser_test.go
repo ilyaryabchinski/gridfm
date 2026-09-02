@@ -105,7 +105,7 @@ func TestSetEntriesPreservesFocusByIdentityOnRefresh(t *testing.T) {
 		{Name: "b", Path: "/d/b"},
 		{Name: "c", Path: "/d/c"},
 	})
-	b.Nav().SetFocus(1)
+	b.SetFocusIndex(1)
 
 	// A refresh returns a new slice; entry /d/b keeps focus.
 	b.SetEntries("/d", []browser.Entry{
@@ -129,7 +129,7 @@ func TestSetEntriesFallsBackToNearestIndexWhenFocusedEntryVanishes(t *testing.T)
 		{Name: "b", Path: "/d/b"},
 		{Name: "c", Path: "/d/c"},
 	})
-	b.Nav().SetFocus(2)
+	b.SetFocusIndex(2)
 
 	b.SetEntries("/d", []browser.Entry{
 		{Name: "a", Path: "/d/a"},
@@ -149,7 +149,7 @@ func TestSetEntriesNewDirectoryFocusesFirstEntry(t *testing.T) {
 		{Name: "a", Path: "/d/a"},
 		{Name: "b", Path: "/d/b"},
 	})
-	b.Nav().SetFocus(1)
+	b.SetFocusIndex(1)
 
 	b.SetEntries("/sub", []browser.Entry{
 		{Name: "x", Path: "/sub/x"},

@@ -60,7 +60,7 @@ func (m *Model) renderBody(l ui.Layout) string {
 // spacer cells so the visible geometry matches the layout calculations.
 func (m *Model) renderViewport(l ui.Layout) string {
 	entries := m.browser.Entries
-	focus := m.browser.Nav().Focus()
+	focus := m.browser.FocusIndex()
 
 	first := m.scrollRow * l.Columns
 	last := min(first+l.Columns*l.RowsVisible, len(entries))

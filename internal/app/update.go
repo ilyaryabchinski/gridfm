@@ -71,7 +71,7 @@ func (m *Model) applyDirectoryLoaded(msg DirectoryLoadedMsg) {
 // syncGridColumns keeps the spatial grid aligned with the responsive layout
 // so vertical movement matches what is actually rendered.
 func (m *Model) syncGridColumns() {
-	m.browser.Nav().SetColumns(m.layout().Columns)
+	m.browser.SetColumns(m.layout().Columns)
 }
 
 // handleKey applies Milestone 0 keybindings. Decisions settled for the
@@ -115,27 +115,25 @@ func (m *Model) handleMovement(key string) (tea.Model, tea.Cmd) {
 // It must use a pointer receiver: with a value receiver the movement would
 // land in a copy of the model and silently vanish.
 func (m *Model) moveFocus(key string) (bool, bool) {
-	nav := m.browser.Nav()
-
 	switch key {
 	case "left", "h":
-		left := nav.Left()
+		left := m.browser.Left()
 
 		return left, true
 	case "right", "l":
-		return nav.Right(), false
+		return m.browser.Right(), false
 	case "up", "k":
-		return nav.Up(), false
+		return m.browser.Up(), false
 	case "down", "j":
-		return nav.Down(), false
+		return m.browser.Down(), false
 	case "pgup":
-		return nav.PageUp(m.rowsVisible()), false
+		return m.browser.PageUp(m.rowsVisible()), false
 	case "pgdown":
-		return nav.PageDown(m.rowsVisible()), false
+		return m.browser.PageDown(m.rowsVisible()), false
 	case "home":
-		return nav.Home(), false
+		return m.browser.Home(), false
 	case "end":
-		return nav.End(), false
+		return m.browser.End(), false
 	}
 
 	return false, false
@@ -175,7 +173,7 @@ func (m *Model) rowsVisible() int {
 func (m *Model) clampScroll() {
 	m.scrollRow = ui.ScrollOffset(
 		m.scrollRow,
-		m.browser.Nav().FocusedRow(),
+		m.browser.FocusedRow(),
 		m.rowsVisible(),
 	)
 }
