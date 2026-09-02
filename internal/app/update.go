@@ -1,12 +1,9 @@
 package app
 
 import (
-	"context"
-	"os/exec"
 	"path/filepath"
 
 	"gridfm/internal/browser"
-	"gridfm/internal/open"
 	"gridfm/internal/ui"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -56,8 +53,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, nil
 
-	case EntryNotDirectoryMsg:
-		return m.applyEntryNotDirectory(msg)
+	case EntryResolvedMsg:
+		return m.applyEntryResolved(msg)
 
 	case PlacesLoadedMsg:
 		m.places = msg.Places
@@ -67,11 +64,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case OpenFinishedMsg:
-		if msg.Err != nil {
-			m.note = "editor exited: " + msg.Err.Error()
-		}
-
-		return m, nil
+		return m.applyOpenFinished(msg)
 
 	case tea.KeyMsg:
 		return m.handleKey(msg.String())
@@ -89,6 +82,9 @@ func (m *Model) applyDirectoryLoaded(msg DirectoryLoadedMsg) {
 
 	if msg.Err != nil {
 		m.loadErr = msg.Err
+		// A failed back or forward leaves the history cursor on the current
+		// location so the traversal can be retried.
+		m.browser.CancelHistoryStep()
 		// Old entries stay visible; the failure is surfaced as a status
 		// note so failed navigation is never silent.
 		m.note = "error: " + msg.Err.Error()
@@ -103,17 +99,33 @@ func (m *Model) applyDirectoryLoaded(msg DirectoryLoadedMsg) {
 	m.clampScroll()
 }
 
-// applyEntryNotDirectory completes an open attempt on a file: the request
-// ends, the loaded directory stays, and the outcome shows as a note.
-func (m *Model) applyEntryNotDirectory(msg EntryNotDirectoryMsg) (tea.Model, tea.Cmd) {
+// applyEntryResolved completes an open attempt whose target turned out to
+// be a file rather than a directory: the resolve request ends and the file
+// goes to the opener.
+func (m *Model) applyEntryResolved(msg EntryResolvedMsg) (tea.Model, tea.Cmd) {
 	if msg.RequestID != m.requestID {
 		return m, nil // stale result from a superseded request
 	}
 
 	m.loading = false
-	m.note = "not a directory: " + filepath.Base(msg.Path)
 
-	return m, nil
+	return m, m.openFile(msg.Path)
+}
+
+// applyOpenFinished reports the outcome of an external open and refreshes
+// the current directory, since editors may create, rename, or delete files.
+func (m *Model) applyOpenFinished(msg OpenFinishedMsg) (tea.Model, tea.Cmd) {
+	refresh := loadDirectoryCmd(m.startRequest(), m.browser.Path)
+
+	if msg.Err != nil {
+		m.note = "open failed: " + msg.Err.Error()
+
+		return m, refresh
+	}
+
+	m.note = openedLabel(msg.Path)
+
+	return m, refresh
 }
 
 // syncGridColumns keeps the spatial grid aligned with the responsive layout
@@ -133,73 +145,6 @@ func (m *Model) handleKey(key string) (tea.Model, tea.Cmd) {
 	}
 
 	return m.handleNormalKeys(key)
-}
-
-// handleSortKeys drives the sort menu overlay.
-func (m *Model) handleSortKeys(key string) (tea.Model, tea.Cmd) {
-	switch key {
-	case keyEsc, "s", "q":
-		m.sortOpen = false
-
-		return m, nil
-	case keyUp, "k":
-		m.sortCursor = max(m.sortCursor-1, 0)
-	case keyDown, "j":
-		m.sortCursor = min(m.sortCursor+1, len(sortModes)-1)
-	case keyEnter:
-		mode := sortModes[m.sortCursor]
-		order := browser.SortAscending
-		if m.browser.SortMode() == mode {
-			// Selecting the active mode flips its direction.
-			order = m.browser.SortOrder().Opposite()
-		}
-		m.browser.SetSort(mode, order)
-		m.sortOpen = false
-	case "o":
-		m.browser.SetSort(m.browser.SortMode(), m.browser.SortOrder().Opposite())
-	}
-
-	return m, nil
-}
-
-// handleFilterKeys drives the incremental filter input. Editing updates the
-// visible view live; esc abandons the filter entirely. Only single
-// printable runes extend the query, so named keys (tab, arrows, f-keys)
-// never leak text into it.
-func (m *Model) handleFilterKeys(key string) (tea.Model, tea.Cmd) {
-	switch key {
-	case keyEsc:
-		m.filterInput = false
-		m.browser.SetFilter("")
-
-		return m, nil
-	case keyEnter:
-		m.filterInput = false
-
-		return m, nil
-	case keyBackspace:
-		query := m.browser.Filter()
-		if query != "" {
-			runes := []rune(query)
-			m.browser.SetFilter(string(runes[:len(runes)-1]))
-		}
-
-		return m, nil
-	case "ctrl+u":
-		m.browser.SetFilter("")
-
-		return m, nil
-	case keyUp, keyDown, keyLeft, keyRight, keyPgUp, keyPgDown, keyHome, keyEnd, keyTab:
-		// Navigation keys are swallowed while typing; the filter keeps
-		// focus where the user left it.
-		return m, nil
-	}
-
-	if runes := []rune(key); len(runes) == 1 && runes[0] >= 0x20 && runes[0] != 0x7f {
-		m.browser.SetFilter(m.browser.Filter() + key)
-	}
-
-	return m, nil
 }
 
 // handleNormalKeys applies browsing keys outside overlays and inputs: it
@@ -282,17 +227,6 @@ func (m *Model) handleEntryKeys(key string) (tea.Model, tea.Cmd) {
 	return m.handleMovement(key)
 }
 
-// escalateClear clears transient state one layer at a time.
-func (m *Model) escalateClear() {
-	switch {
-	case m.note != "":
-		m.note = ""
-	case m.browser.Filter() != "":
-		m.browser.SetFilter("")
-		m.filterInput = false
-	}
-}
-
 // switchRegion toggles grid and sidebar focus when the sidebar is visible
 // in either docked or overlay form.
 func (m *Model) switchRegion() *Model {
@@ -359,39 +293,6 @@ func (m *Model) openFocused() (tea.Model, tea.Cmd) {
 }
 
 // openFile builds the command for opening a single file.
-func (m *Model) openFile(path string) tea.Cmd {
-	switch open.TargetFor(path) {
-	case open.TargetDesktop:
-		err := open.DesktopOpen(path)
-		if err != nil {
-			m.note = "open failed: " + err.Error()
-
-			return nil
-		}
-		m.note = "opened " + filepath.Base(path)
-
-		return nil
-	case open.TargetEditor:
-		program, args, ok := open.EditorCommand()
-		if !ok {
-			m.note = "no editor configured (set $VISUAL or $EDITOR)"
-
-			return nil
-		}
-
-		// ExecProcess suspends the program, runs the editor on the real
-		// terminal, and restores the TUI afterwards.
-		//nolint:gosec // program and arguments come from trusted env config; no shell involved
-		editor := exec.CommandContext(context.Background(), program, append(args, path)...)
-		m.note = ""
-
-		return tea.ExecProcess(editor, func(err error) tea.Msg {
-			return OpenFinishedMsg{Err: err}
-		})
-	}
-
-	return nil
-}
 
 // handleMovement applies spatial navigation keys for the focused region.
 func (m *Model) handleMovement(key string) (tea.Model, tea.Cmd) {

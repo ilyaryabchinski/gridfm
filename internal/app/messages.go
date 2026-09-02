@@ -19,10 +19,11 @@ type DirectoryLoadedMsg struct {
 	RequestID uint64
 }
 
-// EntryNotDirectoryMsg reports that the user tried to enter a non-directory
-// entry. It is a nonfatal, expected outcome. Like all load results it carries
-// the request ID so stale attempts are discarded.
-type EntryNotDirectoryMsg struct {
+// EntryResolvedMsg reports that an explicitly opened entry resolved to a
+// non-directory target (typically a symlink to a file). The entry should be
+// opened with the file opener. Like all load results it carries the request
+// ID so stale attempts are discarded.
+type EntryResolvedMsg struct {
 	Path      string
 	RequestID uint64
 }
@@ -34,8 +35,10 @@ type PlacesLoadedMsg struct {
 	Home   string
 }
 
-// OpenFinishedMsg reports the completion of an editor session launched with
-// terminal hand-off. A nil Err means the editor exited cleanly.
+// OpenFinishedMsg reports the completion of an externally opened file:
+// an editor session launched with terminal hand-off, or the desktop
+// opener's process. A nil Err means it exited cleanly.
 type OpenFinishedMsg struct {
-	Err error
+	Path string
+	Err  error
 }

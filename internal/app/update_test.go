@@ -306,12 +306,12 @@ func TestViewRendersEveryRowWithGaps(t *testing.T) {
 	}
 }
 
-func TestEnterOnSymlinkFileShowsNoteAndClearsLoading(t *testing.T) {
+func TestEnterOnSymlinkedFileOpensIt(t *testing.T) {
 	t.Parallel()
 
 	m := resize(t, app.New("/d", app.Options{}), 80, 24)
 	m = loaded(t, m, 1, "/d", []browser.Entry{
-		{Name: "f.txt", Path: "/d/f.txt", Symlink: true},
+		{Name: "f.bin", Path: "/d/f.bin", Symlink: true},
 	}, nil)
 
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -323,21 +323,20 @@ func TestEnterOnSymlinkFileShowsNoteAndClearsLoading(t *testing.T) {
 		t.Fatal("entering a symlink should start a resolve request")
 	}
 
-	opened = feed(t, opened, app.EntryNotDirectoryMsg{Path: "/d/f.txt", RequestID: 2})
-	if opened.IsLoading() {
+	// The resolve lands on a file target: the request completes and the
+	// file goes to the opener instead of dying with a note.
+	resolved := feed(t, opened, app.EntryResolvedMsg{Path: "/d/f.bin", RequestID: 2})
+	if resolved.IsLoading() {
 		t.Error("a completed resolve must end the loading state")
-	}
-	if view := opened.View(); !strings.Contains(view, "not a directory: f.txt") {
-		t.Errorf("view should surface the note, got %q", view)
 	}
 }
 
-func TestStaleEntryNotDirectoryIsIgnored(t *testing.T) {
+func TestStaleEntryResolvedIsIgnored(t *testing.T) {
 	t.Parallel()
 
 	m := resize(t, app.New("/d", app.Options{}), 80, 24)
 	m = loaded(t, m, 1, "/d", []browser.Entry{
-		{Name: "f.txt", Path: "/d/f.txt", Symlink: true},
+		{Name: "f.bin", Path: "/d/f.bin", Symlink: true},
 	}, nil)
 
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -345,12 +344,9 @@ func TestStaleEntryNotDirectoryIsIgnored(t *testing.T) {
 	if !ok {
 		t.Fatalf("Update returned %T, want *app.Model", next)
 	}
-	opened = feed(t, opened, app.EntryNotDirectoryMsg{Path: "/d/f.txt", RequestID: 1})
-	if !opened.IsLoading() {
+	resolved := feed(t, opened, app.EntryResolvedMsg{Path: "/d/f.bin", RequestID: 1})
+	if !resolved.IsLoading() {
 		t.Error("a stale resolve result must not end the current request")
-	}
-	if view := opened.View(); strings.Contains(view, "not a directory") {
-		t.Errorf("a stale resolve result must not surface its note, got %q", view)
 	}
 }
 

@@ -454,11 +454,67 @@ func TestEscalatingEscClearsTransientState(t *testing.T) {
 		t.Fatalf("first esc clears the filter, got %q", m.Filter())
 	}
 
-	// Second esc clears a note.
-	m = feed(t, m, app.EntryNotDirectoryMsg{Path: "/d/x", RequestID: 9})
+	// Second esc clears a note. The open outcome note arrives with the
+	// OpenFinishedMsg that also refreshes the directory.
+	m = feed(t, m, app.OpenFinishedMsg{Path: "/d/x.bin"})
 	m = press(t, m, "esc")
-	if strings.Contains(m.View(), "not a directory") {
+	if strings.Contains(m.View(), "opened x.bin") {
 		t.Error("esc should clear the note")
+	}
+}
+
+func TestDesktopOpenReportsOutcomeAndRefreshes(t *testing.T) {
+	t.Parallel()
+
+	m := resize(t, app.New("/d", app.Options{}), 80, 24)
+	m = loaded(t, m, 1, "/d", []browser.Entry{{Name: "big.bin", Path: "/d/big.bin"}}, nil)
+
+	// Entering the file starts the async opener.
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	opened, ok := next.(*app.Model)
+	if !ok {
+		t.Fatalf("Update returned %T, want *app.Model", next)
+	}
+	if cmd == nil {
+		t.Fatal("desktop open should produce a command")
+	}
+
+	// Success reports the opened file and refreshes the directory.
+	opened = feed(t, opened, app.OpenFinishedMsg{Path: "/d/big.bin"})
+	if view := opened.View(); !strings.Contains(view, "opened big.bin") {
+		t.Errorf("view should announce the opened file, got %q", view)
+	}
+	if !opened.IsLoading() {
+		t.Error("an open completion should refresh the directory")
+	}
+
+	// Failure surfaces the error instead.
+	failed := feed(t, opened, app.OpenFinishedMsg{Path: "/d/big.bin", Err: errTestLoad})
+	if view := failed.View(); !strings.Contains(view, "open failed: permission denied") {
+		t.Errorf("view should surface opener failures, got %q", view)
+	}
+}
+
+func TestHeaderShowsHistoryAvailability(t *testing.T) {
+	t.Parallel()
+
+	m := gridOnly(t, resize(t, app.New("/root", app.Options{}), 80, 24))
+	m = loaded(t, m, 1, "/root", entriesAt("/root", 2), nil)
+
+	// The indicators always render; availability styling is driven by the
+	// browser state.
+	view := m.View()
+	if !strings.Contains(view, "←") || !strings.Contains(view, "→") {
+		t.Errorf("header should show history indicators, got %q", view)
+	}
+
+	// After descending one level, back is available while forward is not;
+	// the header keeps rendering both directions.
+	m = pressBackspace(t, m)
+	m = loaded(t, m, 2, "/root/deep", entriesAt("/root/deep", 2), nil)
+	header, _, _ := strings.Cut(m.View(), "\n")
+	if !strings.Contains(header, "←") || !strings.Contains(header, "→") {
+		t.Errorf("header should keep both history indicators, got %q", header)
 	}
 }
 

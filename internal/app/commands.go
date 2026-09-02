@@ -1,8 +1,10 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 
 	"gridfm/internal/browser"
 	"gridfm/internal/places"
@@ -20,8 +22,9 @@ func loadDirectoryCmd(requestID uint64, path string) tea.Cmd {
 	}
 }
 
-// openEntryCmd resolves an entry and enters it when it is a directory.
-// Symlinks are followed only on explicit open, per the filesystem rules.
+// openEntryCmd resolves an entry explicitly opened by the user. Symlinks
+// are followed only here, per the filesystem rules: directories load, and
+// file targets come back as a typed resolution for the file opener.
 func openEntryCmd(requestID uint64, path string) tea.Cmd {
 	return func() tea.Msg {
 		info, err := os.Stat(path)
@@ -33,12 +36,33 @@ func openEntryCmd(requestID uint64, path string) tea.Cmd {
 			}
 		}
 		if !info.IsDir() {
-			return EntryNotDirectoryMsg{Path: path, RequestID: requestID}
+			return EntryResolvedMsg{Path: path, RequestID: requestID}
 		}
 
 		entries, err := browser.ReadDir(path)
 
 		return DirectoryLoadedMsg{RequestID: requestID, Path: path, Entries: entries, Err: err}
+	}
+}
+
+// desktopOpenCmd starts xdg-open off the update loop and waits for it, so
+// post-start failures surface as a typed message instead of vanishing.
+func desktopOpenCmd(path string) tea.Cmd {
+	return func() tea.Msg {
+		//nolint:gosec // xdg-open is a fixed program; the path is passed as an argument, never a shell string
+		cmd := exec.CommandContext(context.Background(), "xdg-open", path)
+
+		err := cmd.Start()
+		if err != nil {
+			return OpenFinishedMsg{Path: path, Err: fmt.Errorf("start xdg-open: %w", err)}
+		}
+
+		err = cmd.Wait()
+		if err != nil {
+			return OpenFinishedMsg{Path: path, Err: fmt.Errorf("xdg-open: %w", err)}
+		}
+
+		return OpenFinishedMsg{Path: path}
 	}
 }
 

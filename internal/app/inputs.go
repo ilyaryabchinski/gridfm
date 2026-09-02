@@ -1,0 +1,88 @@
+package app
+
+import (
+	"gridfm/internal/browser"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+// This file owns the two modal input surfaces: the blocking sort menu
+// overlay and the incremental filter input.
+
+// handleSortKeys drives the sort menu overlay.
+func (m *Model) handleSortKeys(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case keyEsc, "s", "q":
+		m.sortOpen = false
+
+		return m, nil
+	case keyUp, "k":
+		m.sortCursor = max(m.sortCursor-1, 0)
+	case keyDown, "j":
+		m.sortCursor = min(m.sortCursor+1, len(sortModes)-1)
+	case keyEnter:
+		mode := sortModes[m.sortCursor]
+		order := browser.SortAscending
+		if m.browser.SortMode() == mode {
+			// Selecting the active mode flips its direction.
+			order = m.browser.SortOrder().Opposite()
+		}
+		m.browser.SetSort(mode, order)
+		m.sortOpen = false
+	case "o":
+		m.browser.SetSort(m.browser.SortMode(), m.browser.SortOrder().Opposite())
+	}
+
+	return m, nil
+}
+
+// handleFilterKeys drives the incremental filter input. Editing updates the
+// visible view live; esc abandons the filter entirely. Only single
+// printable runes extend the query, so named keys (tab, arrows, f-keys)
+// never leak text into it.
+func (m *Model) handleFilterKeys(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case keyEsc:
+		m.filterInput = false
+		m.browser.SetFilter("")
+
+		return m, nil
+	case keyEnter:
+		m.filterInput = false
+
+		return m, nil
+	case keyBackspace:
+		query := m.browser.Filter()
+		if query != "" {
+			runes := []rune(query)
+			m.browser.SetFilter(string(runes[:len(runes)-1]))
+		}
+
+		return m, nil
+	case "ctrl+u":
+		m.browser.SetFilter("")
+
+		return m, nil
+	case keyUp, keyDown, keyLeft, keyRight, keyPgUp, keyPgDown, keyHome, keyEnd, keyTab:
+		// Navigation keys are swallowed while typing; the filter keeps
+		// focus where the user left it.
+		return m, nil
+	}
+
+	if runes := []rune(key); len(runes) == 1 && runes[0] >= 0x20 && runes[0] != 0x7f {
+		m.browser.SetFilter(m.browser.Filter() + key)
+	}
+
+	return m, nil
+}
+
+// escalateClear clears transient state one layer at a time.
+func (m *Model) escalateClear() {
+	switch {
+	case m.note != "":
+		m.note = ""
+	case m.browser.Filter() != "":
+		m.browser.SetFilter("")
+		m.filterInput = false
+	}
+}

@@ -46,7 +46,7 @@ func (m *Model) View() string {
 
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
-		ui.RenderBreadcrumbs(m.width, m.browser.Path, m.home),
+		ui.RenderBreadcrumbs(m.width, m.browser.Path, m.home, m.browser.CanBack(), m.browser.CanForward()),
 		middle,
 		ui.RenderStatusBar(m.width, m.statusInfo(l)),
 	)
