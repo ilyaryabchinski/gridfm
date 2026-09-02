@@ -46,6 +46,7 @@ type Model struct {
 	width     int
 	height    int
 	requestID uint64
+	openID    uint64
 	loading   bool
 	loadErr   error
 	scrollRow int

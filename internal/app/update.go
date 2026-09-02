@@ -114,16 +114,27 @@ func (m *Model) applyEntryResolved(msg EntryResolvedMsg) (tea.Model, tea.Cmd) {
 
 // applyOpenFinished reports the outcome of an external open and refreshes
 // the current directory, since editors may create, rename, or delete files.
+// Stale completions are discarded entirely: refreshing on one would
+// invalidate an in-flight navigation and strand a pending history step.
 func (m *Model) applyOpenFinished(msg OpenFinishedMsg) (tea.Model, tea.Cmd) {
-	refresh := loadDirectoryCmd(m.startRequest(), m.browser.Path)
-
-	if msg.Err != nil {
-		m.note = "open failed: " + msg.Err.Error()
-
-		return m, refresh
+	if msg.RequestID != m.openID {
+		return m, nil // stale result from a superseded open
 	}
 
-	m.note = openedLabel(msg.Path)
+	note := openedLabel(msg.Path)
+	if msg.Err != nil {
+		note = "open failed: " + msg.Err.Error()
+	}
+
+	// A browse request in flight wins; it reloads the directory anyway.
+	if m.loading {
+		m.note = note
+
+		return m, nil
+	}
+
+	refresh := loadDirectoryCmd(m.startRequest(), m.browser.Path)
+	m.note = note
 
 	return m, refresh
 }

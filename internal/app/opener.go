@@ -16,11 +16,15 @@ import (
 
 // openFile builds the command for opening a single file. Text targets run
 // in the editor with terminal hand-off; everything else goes to the desktop
-// opener, whose completion arrives as OpenFinishedMsg.
+// opener, whose completion arrives as OpenFinishedMsg. Each open gets its
+// own identity so late completions can be recognized as stale.
 func (m *Model) openFile(path string) tea.Cmd {
+	m.openID++
+	id := m.openID
+
 	switch open.TargetFor(path) {
 	case open.TargetDesktop:
-		return desktopOpenCmd(path)
+		return desktopOpenCmd(id, path)
 	case open.TargetEditor:
 		program, args, ok := open.EditorCommand()
 		if !ok {
@@ -36,7 +40,7 @@ func (m *Model) openFile(path string) tea.Cmd {
 		m.note = ""
 
 		return tea.ExecProcess(editor, func(err error) tea.Msg {
-			return OpenFinishedMsg{Path: path, Err: err}
+			return OpenFinishedMsg{Path: path, RequestID: id, Err: err}
 		})
 	}
 

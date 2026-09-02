@@ -456,7 +456,7 @@ func TestEscalatingEscClearsTransientState(t *testing.T) {
 
 	// Second esc clears a note. The open outcome note arrives with the
 	// OpenFinishedMsg that also refreshes the directory.
-	m = feed(t, m, app.OpenFinishedMsg{Path: "/d/x.bin"})
+	m = feed(t, m, app.OpenFinishedMsg{Path: "/d/x.bin", RequestID: 1})
 	m = press(t, m, "esc")
 	if strings.Contains(m.View(), "opened x.bin") {
 		t.Error("esc should clear the note")
@@ -480,7 +480,7 @@ func TestDesktopOpenReportsOutcomeAndRefreshes(t *testing.T) {
 	}
 
 	// Success reports the opened file and refreshes the directory.
-	opened = feed(t, opened, app.OpenFinishedMsg{Path: "/d/big.bin"})
+	opened = feed(t, opened, app.OpenFinishedMsg{Path: "/d/big.bin", RequestID: 1})
 	if view := opened.View(); !strings.Contains(view, "opened big.bin") {
 		t.Errorf("view should announce the opened file, got %q", view)
 	}
@@ -489,7 +489,7 @@ func TestDesktopOpenReportsOutcomeAndRefreshes(t *testing.T) {
 	}
 
 	// Failure surfaces the error instead.
-	failed := feed(t, opened, app.OpenFinishedMsg{Path: "/d/big.bin", Err: errTestLoad})
+	failed := feed(t, opened, app.OpenFinishedMsg{Path: "/d/big.bin", RequestID: 1, Err: errTestLoad})
 	if view := failed.View(); !strings.Contains(view, "open failed: permission denied") {
 		t.Errorf("view should surface opener failures, got %q", view)
 	}
@@ -525,4 +525,53 @@ func names(entries []browser.Entry) []string {
 	}
 
 	return out
+}
+
+func TestOpenCompletionDuringPendingBackDoesNotStrandHistory(t *testing.T) {
+	t.Parallel()
+
+	m := gridOnly(t, resize(t, app.New("/root", app.Options{}), 80, 24))
+	m = loaded(t, m, 1, "/root", entriesAt("/root", 2), nil)
+	m = pressBackspace(t, m)
+	m = loaded(t, m, 2, "/root/deep", entriesAt("/root/deep", 2), nil)
+
+	// Open a desktop-managed file (open identity 1), then start a back
+	// traversal (browse request 2) while the opener is still running.
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	opened, ok := next.(*app.Model)
+	if !ok {
+		t.Fatalf("Update returned %T, want *app.Model", next)
+	}
+	if cmd == nil {
+		t.Fatal("enter on a desktop file should produce an open command")
+	}
+
+	m = feed(t, opened, tea.KeyMsg{Type: tea.KeyLeft, Alt: true})
+	if !m.IsLoading() {
+		t.Fatal("alt+left should start a back navigation")
+	}
+
+	// The opener completes mid-navigation: it must not start a refresh that
+	// would invalidate the pending back result...
+	m = feed(t, m, app.OpenFinishedMsg{Path: "/root/deep/thing.bin", RequestID: 1})
+	if got := m.Path(); got != "/root/deep" {
+		t.Errorf("stale handling changed the location: %q", got)
+	}
+
+	// ...so the back result applies normally and history stays healthy.
+	// The back request is ID 3 (1 = initial load, 2 = descend).
+	m = loaded(t, m, 3, "/root", entriesAt("/root", 2), nil)
+	if got := m.Path(); got != "/root" {
+		t.Fatalf("Path after back = %q, want /root", got)
+	}
+	if m.IsLoading() {
+		t.Fatal("loading should end once the back result applies")
+	}
+
+	// Forward must still work: the pending step was not stranded.
+	m = feed(t, m, tea.KeyMsg{Type: tea.KeyRight, Alt: true})
+	m = loaded(t, m, 4, "/root/deep", entriesAt("/root/deep", 2), nil)
+	if got := m.Path(); got != "/root/deep" {
+		t.Errorf("Path after forward = %q, want /root/deep (history not stranded)", got)
+	}
 }

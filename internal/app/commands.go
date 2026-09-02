@@ -46,23 +46,24 @@ func openEntryCmd(requestID uint64, path string) tea.Cmd {
 }
 
 // desktopOpenCmd starts xdg-open off the update loop and waits for it, so
-// post-start failures surface as a typed message instead of vanishing.
-func desktopOpenCmd(path string) tea.Cmd {
+// post-start failures surface as a typed message instead of vanishing. The
+// open ID tags the completion for stale-result rejection.
+func desktopOpenCmd(openID uint64, path string) tea.Cmd {
 	return func() tea.Msg {
 		//nolint:gosec // xdg-open is a fixed program; the path is passed as an argument, never a shell string
 		cmd := exec.CommandContext(context.Background(), "xdg-open", path)
 
 		err := cmd.Start()
 		if err != nil {
-			return OpenFinishedMsg{Path: path, Err: fmt.Errorf("start xdg-open: %w", err)}
+			return OpenFinishedMsg{Path: path, RequestID: openID, Err: fmt.Errorf("start xdg-open: %w", err)}
 		}
 
 		err = cmd.Wait()
 		if err != nil {
-			return OpenFinishedMsg{Path: path, Err: fmt.Errorf("xdg-open: %w", err)}
+			return OpenFinishedMsg{Path: path, RequestID: openID, Err: fmt.Errorf("xdg-open: %w", err)}
 		}
 
-		return OpenFinishedMsg{Path: path}
+		return OpenFinishedMsg{Path: path, RequestID: openID}
 	}
 }
 

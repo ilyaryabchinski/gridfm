@@ -37,8 +37,11 @@ type PlacesLoadedMsg struct {
 
 // OpenFinishedMsg reports the completion of an externally opened file:
 // an editor session launched with terminal hand-off, or the desktop
-// opener's process. A nil Err means it exited cleanly.
+// opener's process. A nil Err means it exited cleanly. RequestID is the
+// open that produced the completion; stale completions are discarded so a
+// late opener can never supersede newer navigation.
 type OpenFinishedMsg struct {
-	Path string
-	Err  error
+	Path      string
+	Err       error
+	RequestID uint64
 }

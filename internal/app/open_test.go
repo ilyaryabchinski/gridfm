@@ -63,7 +63,7 @@ func TestOpenFinishedMessageReportsFailure(t *testing.T) {
 	m = loaded(t, m, 1, "/d", []browser.Entry{{Name: "notes.md", Path: "/d/notes.md"}}, nil)
 
 	m = feed(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	m = feed(t, m, app.OpenFinishedMsg{Path: "/d/notes.md", Err: errTestLoad})
+	m = feed(t, m, app.OpenFinishedMsg{Path: "/d/notes.md", RequestID: 1, Err: errTestLoad})
 	if view := m.View(); !strings.Contains(view, "open failed: permission denied") {
 		t.Errorf("view should surface editor failures, got %q", view)
 	}
