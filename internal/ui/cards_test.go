@@ -20,7 +20,7 @@ func TestClassify(t *testing.T) {
 		want  ui.Category
 	}{
 		{"directory", browser.Entry{Name: "src", IsDir: true}, ui.CategoryDir},
-		{"go source", browser.Entry{Name: "main.go"}, ui.CategoryText},
+		{"go source", browser.Entry{Name: "main.go"}, ui.CategoryGo},
 		{"image", browser.Entry{Name: "logo.PNG"}, ui.CategoryImage},
 		{"archive", browser.Entry{Name: "source.zip"}, ui.CategoryArchive},
 		{"media", browser.Entry{Name: "song.mp3"}, ui.CategoryMedia},

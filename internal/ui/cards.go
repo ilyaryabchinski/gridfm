@@ -17,6 +17,7 @@ type Category int
 // stable styling.
 const (
 	CategoryDir Category = iota
+	CategoryGo
 	CategoryImage
 	CategoryArchive
 	CategoryMedia
@@ -50,6 +51,7 @@ var categoryExt = map[string]Category{
 //nolint:gochecknoglobals // static lookup table, never mutated
 var categoryLabel = map[Category]string{
 	CategoryDir:     "DIR",
+	CategoryGo:      "GO",
 	CategoryImage:   "IMG",
 	CategoryArchive: "ARC",
 	CategoryMedia:   "AV",
@@ -61,22 +63,23 @@ var categoryLabel = map[Category]string{
 //
 //nolint:gochecknoglobals // static lookup table, never mutated
 var categoryColor = map[Category]lipgloss.Color{
-	CategoryDir:     lipgloss.Color("4"), // blue
-	CategoryImage:   lipgloss.Color("5"), // magenta
-	CategoryArchive: lipgloss.Color("3"), // yellow
-	CategoryMedia:   lipgloss.Color("6"), // cyan
-	CategoryText:    lipgloss.Color("2"), // green
-	CategoryOther:   lipgloss.Color("7"), // gray
+	CategoryDir:     lipgloss.Color("4"),  // blue
+	CategoryGo:      lipgloss.Color("14"), // bright cyan
+	CategoryImage:   lipgloss.Color("5"),  // magenta
+	CategoryArchive: lipgloss.Color("3"),  // yellow
+	CategoryMedia:   lipgloss.Color("6"),  // cyan
+	CategoryText:    lipgloss.Color("2"),  // green
+	CategoryOther:   lipgloss.Color("7"),  // gray
 }
 
 // Classify maps an entry to its placeholder category. The .go extension gets
-// a dedicated label as a nod to the project's own working directory.
+// a dedicated category as a nod to the project's own working directory.
 func Classify(e browser.Entry) Category {
 	if e.IsDir {
 		return CategoryDir
 	}
 	if strings.EqualFold(filepath.Ext(e.Name), ".go") {
-		return CategoryText
+		return CategoryGo
 	}
 	if c, ok := categoryExt[strings.ToLower(filepath.Ext(e.Name))]; ok {
 		return c
@@ -85,15 +88,9 @@ func Classify(e browser.Entry) Category {
 	return CategoryOther
 }
 
-// Label returns the short placeholder type label for an entry.
+// Label returns the short placeholder type label for an entry. It is derived
+// entirely from the category so labels and colors can never diverge.
 func Label(e browser.Entry) string {
-	if e.IsDir {
-		return categoryLabel[CategoryDir]
-	}
-	if ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(e.Name)), "."); ext == "go" {
-		return "GO"
-	}
-
 	return categoryLabel[Classify(e)]
 }
 
