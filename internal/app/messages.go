@@ -4,7 +4,10 @@
 // on I/O.
 package app
 
-import "gridfm/internal/browser"
+import (
+	"gridfm/internal/browser"
+	"gridfm/internal/places"
+)
 
 // DirectoryLoadedMsg carries the result of an asynchronous directory read.
 // Results are applied only when RequestID matches the newest request, which
@@ -22,4 +25,17 @@ type DirectoryLoadedMsg struct {
 type EntryNotDirectoryMsg struct {
 	Path      string
 	RequestID uint64
+}
+
+// PlacesLoadedMsg carries the discovered sidebar places and the home path
+// used for breadcrumb abbreviation.
+type PlacesLoadedMsg struct {
+	Places []places.Place
+	Home   string
+}
+
+// OpenFinishedMsg reports the completion of an editor session launched with
+// terminal hand-off. A nil Err means the editor exited cleanly.
+type OpenFinishedMsg struct {
+	Err error
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"gridfm/internal/browser"
+	"gridfm/internal/places"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -34,8 +35,17 @@ func openEntryCmd(requestID uint64, path string) tea.Cmd {
 		if !info.IsDir() {
 			return EntryNotDirectoryMsg{Path: path, RequestID: requestID}
 		}
+
 		entries, err := browser.ReadDir(path)
 
 		return DirectoryLoadedMsg{RequestID: requestID, Path: path, Entries: entries, Err: err}
+	}
+}
+
+// loadPlacesCmd discovers sidebar places. It touches only the user's home
+// area and standard folder names.
+func loadPlacesCmd() tea.Cmd {
+	return func() tea.Msg {
+		return PlacesLoadedMsg{Places: places.List(), Home: places.Home()}
 	}
 }

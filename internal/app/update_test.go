@@ -66,10 +66,17 @@ func entriesAt(base string, count int) []browser.Entry {
 	return entries
 }
 
+// gridOnly presses ~ to hide the sidebar so the grid spans the full width.
+func gridOnly(t *testing.T, m *app.Model) *app.Model {
+	t.Helper()
+
+	return press(t, m, "~")
+}
+
 func TestInitialLoadAppliesEntries(t *testing.T) {
 	t.Parallel()
 
-	m := app.New("/tmp/demo")
+	m := app.New("/tmp/demo", app.Options{})
 	if !m.IsLoading() {
 		t.Error("a fresh model should be loading")
 	}
@@ -97,7 +104,7 @@ func TestInitialLoadAppliesEntries(t *testing.T) {
 func TestStaleDirectoryResultIsIgnored(t *testing.T) {
 	t.Parallel()
 
-	m := resize(t, app.New("/tmp/old"), 80, 24)
+	m := resize(t, app.New("/tmp/old", app.Options{}), 80, 24)
 	m = loaded(t, m, 1, "/tmp/old", entriesAt("/tmp/old", 3), nil)
 
 	// Navigating to the parent starts request 2. Its result applies...
@@ -121,7 +128,7 @@ func TestStaleDirectoryResultIsIgnored(t *testing.T) {
 func TestLoadErrorIsStoredAndRendered(t *testing.T) {
 	t.Parallel()
 
-	m := resize(t, app.New("/tmp/boom"), 80, 24)
+	m := resize(t, app.New("/tmp/boom", app.Options{}), 80, 24)
 	m = loaded(t, m, 1, "/tmp/boom", nil, errTestLoad)
 
 	if !errors.Is(m.LoadError(), errTestLoad) {
@@ -135,7 +142,7 @@ func TestLoadErrorIsStoredAndRendered(t *testing.T) {
 func TestNavigationKeysMoveFocus(t *testing.T) {
 	t.Parallel()
 
-	m := resize(t, app.New("/d"), 80, 24)
+	m := gridOnly(t, resize(t, app.New("/d", app.Options{}), 80, 24))
 	// 12 entries at 5 columns:
 	//   row 0: 00 01 02 03 04
 	//   row 1: 05 06 07 08 09
@@ -163,7 +170,7 @@ func TestNavigationKeysMoveFocus(t *testing.T) {
 func TestBackspaceAtLeftEdgeGoesToParent(t *testing.T) {
 	t.Parallel()
 
-	m := resize(t, app.New("/d/sub"), 80, 24)
+	m := gridOnly(t, resize(t, app.New("/d/sub", app.Options{}), 80, 24))
 	m = loaded(t, m, 1, "/d/sub", entriesAt("/d/sub", 6), nil)
 
 	m = press(t, m, "h") // moves left, no navigation
@@ -183,7 +190,7 @@ func TestBackspaceAtLeftEdgeGoesToParent(t *testing.T) {
 func TestBackspaceAtRootIsNoOp(t *testing.T) {
 	t.Parallel()
 
-	m := resize(t, app.New("/"), 80, 24)
+	m := gridOnly(t, resize(t, app.New("/", app.Options{}), 80, 24))
 	m = loaded(t, m, 1, "/", []browser.Entry{{Name: "x", Path: "/x"}}, nil)
 
 	m = pressBackspace(t, m)
@@ -195,7 +202,7 @@ func TestBackspaceAtRootIsNoOp(t *testing.T) {
 func TestQuitKeysReturnQuitCommand(t *testing.T) {
 	t.Parallel()
 
-	m := resize(t, app.New("/d"), 80, 24)
+	m := resize(t, app.New("/d", app.Options{}), 80, 24)
 
 	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")}); cmd == nil {
 		t.Error("q should produce a quit command")
@@ -208,7 +215,8 @@ func TestQuitKeysReturnQuitCommand(t *testing.T) {
 func TestResizePreservesFocusedEntry(t *testing.T) {
 	t.Parallel()
 
-	m := resize(t, app.New("/d"), 120, 30)
+	m := resize(t, app.New("/d", app.Options{}), 120, 30)
+	m = gridOnly(t, m)
 	m = loaded(t, m, 1, "/d", entriesAt("/d", 30), nil)
 	focused := m.FocusedPath()
 	if focused == "" {
@@ -225,15 +233,17 @@ func TestResizePreservesFocusedEntry(t *testing.T) {
 func TestViewRendersHeaderStatusAndEntries(t *testing.T) {
 	t.Parallel()
 
-	m := resize(t, app.New("/tmp/demo"), 80, 24)
+	m := gridOnly(t, resize(t, app.New("/tmp/demo", app.Options{}), 80, 24))
 	m = loaded(t, m, 1, "/tmp/demo", []browser.Entry{
 		{Name: "src", Path: "/tmp/demo/src", IsDir: true},
 		{Name: "main.go", Path: "/tmp/demo/main.go"},
 	}, nil)
 
+	// The header renders breadcrumbs, not the raw path: segments joined by
+	// separators.
 	view := m.View()
-	if !strings.Contains(view, "/tmp/demo") {
-		t.Errorf("view should show the location, got %q", view)
+	if !strings.Contains(view, "/tmp") || !strings.Contains(view, "demo") {
+		t.Errorf("view should show the location crumbs, got %q", view)
 	}
 	if !strings.Contains(view, "main.go") {
 		t.Errorf("view should show card names, got %q", view)
@@ -241,12 +251,15 @@ func TestViewRendersHeaderStatusAndEntries(t *testing.T) {
 	if !strings.Contains(view, "2 items") {
 		t.Errorf("view should show the item count, got %q", view)
 	}
+	if !strings.Contains(view, "name asc") {
+		t.Errorf("view should show the sort state, got %q", view)
+	}
 }
 
 func TestViewTooSmallKeepsState(t *testing.T) {
 	t.Parallel()
 
-	m := resize(t, app.New("/d"), 80, 24)
+	m := resize(t, app.New("/d", app.Options{}), 80, 24)
 	m = loaded(t, m, 1, "/d", []browser.Entry{{Name: "keep.txt", Path: "/d/keep.txt"}}, nil)
 
 	m = resize(t, m, 4, 3)
@@ -267,10 +280,10 @@ func TestViewTooSmallKeepsState(t *testing.T) {
 func TestViewRendersEveryRowWithGaps(t *testing.T) {
 	t.Parallel()
 
-	// 12 entries at 80x24 render 5 columns, 3 rows with a spacer line
-	// between card rows. Regression: an inner-loop index bug used to drop
-	// every second row.
-	m := resize(t, app.New("/d"), 80, 24)
+	// 12 entries at 80x24 (sidebar off, 5 columns) render 3 rows with a
+	// spacer line between card rows. Regression: an inner-loop index bug
+	// used to drop every second row.
+	m := gridOnly(t, resize(t, app.New("/d", app.Options{}), 80, 24))
 	m = loaded(t, m, 1, "/d", entriesAt("/d", 12), nil)
 
 	view := m.View()
@@ -293,11 +306,13 @@ func TestViewRendersEveryRowWithGaps(t *testing.T) {
 	}
 }
 
-func TestEnterOnFileClearsLoadingAndShowsNote(t *testing.T) {
+func TestEnterOnSymlinkFileShowsNoteAndClearsLoading(t *testing.T) {
 	t.Parallel()
 
-	m := resize(t, app.New("/d"), 80, 24)
-	m = loaded(t, m, 1, "/d", []browser.Entry{{Name: "f.txt", Path: "/d/f.txt"}}, nil)
+	m := resize(t, app.New("/d", app.Options{}), 80, 24)
+	m = loaded(t, m, 1, "/d", []browser.Entry{
+		{Name: "f.txt", Path: "/d/f.txt", Symlink: true},
+	}, nil)
 
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	opened, ok := next.(*app.Model)
@@ -305,12 +320,12 @@ func TestEnterOnFileClearsLoadingAndShowsNote(t *testing.T) {
 		t.Fatalf("Update returned %T, want *app.Model", next)
 	}
 	if !opened.IsLoading() {
-		t.Fatal("entering an entry should start a request")
+		t.Fatal("entering a symlink should start a resolve request")
 	}
 
 	opened = feed(t, opened, app.EntryNotDirectoryMsg{Path: "/d/f.txt", RequestID: 2})
 	if opened.IsLoading() {
-		t.Error("a completed open must end the loading state")
+		t.Error("a completed resolve must end the loading state")
 	}
 	if view := opened.View(); !strings.Contains(view, "not a directory: f.txt") {
 		t.Errorf("view should surface the note, got %q", view)
@@ -320,8 +335,10 @@ func TestEnterOnFileClearsLoadingAndShowsNote(t *testing.T) {
 func TestStaleEntryNotDirectoryIsIgnored(t *testing.T) {
 	t.Parallel()
 
-	m := resize(t, app.New("/d"), 80, 24)
-	m = loaded(t, m, 1, "/d", []browser.Entry{{Name: "f.txt", Path: "/d/f.txt"}}, nil)
+	m := resize(t, app.New("/d", app.Options{}), 80, 24)
+	m = loaded(t, m, 1, "/d", []browser.Entry{
+		{Name: "f.txt", Path: "/d/f.txt", Symlink: true},
+	}, nil)
 
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	opened, ok := next.(*app.Model)
@@ -330,17 +347,17 @@ func TestStaleEntryNotDirectoryIsIgnored(t *testing.T) {
 	}
 	opened = feed(t, opened, app.EntryNotDirectoryMsg{Path: "/d/f.txt", RequestID: 1})
 	if !opened.IsLoading() {
-		t.Error("a stale open result must not end the current request")
+		t.Error("a stale resolve result must not end the current request")
 	}
 	if view := opened.View(); strings.Contains(view, "not a directory") {
-		t.Errorf("a stale open result must not surface its note, got %q", view)
+		t.Errorf("a stale resolve result must not surface its note, got %q", view)
 	}
 }
 
 func TestFailedNavigationShowsErrorWhileEntriesRemain(t *testing.T) {
 	t.Parallel()
 
-	m := resize(t, app.New("/d/sub"), 80, 24)
+	m := gridOnly(t, resize(t, app.New("/d/sub", app.Options{}), 80, 24))
 	m = loaded(t, m, 1, "/d/sub", entriesAt("/d/sub", 6), nil)
 
 	m = pressBackspace(t, m)
@@ -358,7 +375,7 @@ func TestFailedNavigationShowsErrorWhileEntriesRemain(t *testing.T) {
 func TestErrorStateIsSanitized(t *testing.T) {
 	t.Parallel()
 
-	m := resize(t, app.New("/d"), 80, 24)
+	m := resize(t, app.New("/d", app.Options{}), 80, 24)
 	m = loaded(t, m, 1, "/d", nil, errTestEscape)
 
 	view := m.View()
