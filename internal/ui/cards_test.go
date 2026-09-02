@@ -94,7 +94,7 @@ func TestRenderCardMatchesZoomGeometry(t *testing.T) {
 
 			size := tt.zoom.CardSize()
 			entry := browser.Entry{Name: "main.go", Path: filepath.Join("/d", "main.go")}
-			card := ui.RenderCard(entry, tt.zoom, false, ui.IconModeLabel)
+			card := ui.RenderCard(entry, tt.zoom, ui.CardState{}, ui.IconModeLabel)
 
 			lines := strings.Split(card, "\n")
 			if len(lines) != size.Height {
@@ -113,7 +113,7 @@ func TestRenderCompactCardShowsIconAndName(t *testing.T) {
 	t.Parallel()
 
 	entry := browser.Entry{Name: "main.go", Path: "/d/main.go"}
-	card := ui.RenderCard(entry, ui.ZoomCompact, false, ui.IconModeUnicode)
+	card := ui.RenderCard(entry, ui.ZoomCompact, ui.CardState{}, ui.IconModeUnicode)
 
 	if !strings.Contains(card, "🐹") {
 		t.Errorf("compact card should include the type glyph, got:\n%s", card)
@@ -123,7 +123,7 @@ func TestRenderCompactCardShowsIconAndName(t *testing.T) {
 	}
 	// A long name truncates but keeps both icon and name visible.
 	entry.Name = "a-very-long-file-name.go"
-	card = ui.RenderCard(entry, ui.ZoomCompact, false, ui.IconModeUnicode)
+	card = ui.RenderCard(entry, ui.ZoomCompact, ui.CardState{}, ui.IconModeUnicode)
 	if !strings.Contains(card, "🐹") || !strings.Contains(card, "…") {
 		t.Errorf("compact card should truncate the name with an ellipsis, got:\n%s", card)
 	}
@@ -144,7 +144,7 @@ func TestRenderDetailedCardShowsMetadata(t *testing.T) {
 		Mode: 0o644, ModTime: modTime,
 	}
 
-	card := ui.RenderCard(entry, ui.ZoomDetailed, false, ui.IconModeLabel)
+	card := ui.RenderCard(entry, ui.ZoomDetailed, ui.CardState{}, ui.IconModeLabel)
 	if !strings.Contains(card, "4.2K") {
 		t.Errorf("detailed card should show the human size, got:\n%s", card)
 	}
@@ -162,8 +162,8 @@ func TestRenderCardIconModesChangeGlyph(t *testing.T) {
 	entry := browser.Entry{Name: "src", Path: "/d/src", IsDir: true}
 	zoom := ui.ZoomNormal
 
-	label := ui.RenderCard(entry, zoom, false, ui.IconModeLabel)
-	unicode := ui.RenderCard(entry, zoom, false, ui.IconModeUnicode)
+	label := ui.RenderCard(entry, zoom, ui.CardState{}, ui.IconModeLabel)
+	unicode := ui.RenderCard(entry, zoom, ui.CardState{}, ui.IconModeUnicode)
 	if label == unicode {
 		t.Error("label and unicode modes should render differently")
 	}
@@ -180,7 +180,7 @@ func TestRenderCardFocusedDiffersFromUnfocused(t *testing.T) {
 
 	e := browser.Entry{Name: "main.go", Path: "/d/main.go"}
 	zoom := ui.ZoomNormal
-	if ui.RenderCard(e, zoom, false, ui.IconModeLabel) == ui.RenderCard(e, zoom, true, ui.IconModeLabel) {
+	if ui.RenderCard(e, zoom, ui.CardState{}, ui.IconModeLabel) == ui.RenderCard(e, zoom, ui.CardState{Focused: true}, ui.IconModeLabel) {
 		t.Error("focused and unfocused cards should render differently")
 	}
 }
@@ -188,7 +188,7 @@ func TestRenderCardFocusedDiffersFromUnfocused(t *testing.T) {
 func TestRenderCardSanitizesHostName(t *testing.T) {
 	t.Parallel()
 
-	card := ui.RenderCard(browser.Entry{Name: "evil\x1b[31mname", Path: "/d/evil"}, ui.ZoomNormal, false, ui.IconModeLabel)
+	card := ui.RenderCard(browser.Entry{Name: "evil\x1b[31mname", Path: "/d/evil"}, ui.ZoomNormal, ui.CardState{}, ui.IconModeLabel)
 	if strings.ContainsRune(card, '\x1b') {
 		t.Error("card must not contain raw escape characters from file names")
 	}

@@ -92,10 +92,20 @@ func Classify(e browser.Entry) Category {
 	return CategoryOther
 }
 
+// CardState carries the visual state of one card: focused adds the strong
+// border, selected fills an accent background, and dimmed marks entries
+// staged for a move.
+type CardState struct {
+	Focused  bool
+	Selected bool
+	Dimmed   bool
+}
+
 // RenderCard draws one fixed-size card for the zoom level. The size comes
 // from the zoom; compact shows the name only, normal adds the type line,
 // and detailed adds size, permissions, and modification time.
-func RenderCard(e browser.Entry, zoom ZoomLevel, focused bool, icons IconMode) string {
+func RenderCard(e browser.Entry, zoom ZoomLevel, state CardState, icons IconMode) string {
+	focused := state.Focused
 	size := zoom.CardSize()
 	innerWidth := size.Width - 2
 	innerHeight := size.Height - 2
@@ -109,35 +119,19 @@ func RenderCard(e browser.Entry, zoom ZoomLevel, focused bool, icons IconMode) s
 	category := Classify(e)
 	glyph := icons.GlyphFor(e)
 	label := categoryStyle(category).Render(glyph)
-	name := categoryStyle(category).Bold(focused).
+
+	nameStyle := categoryStyle(category)
+	if state.Dimmed {
+		nameStyle = nameStyle.Faint(true)
+	}
+	if state.Selected {
+		// Filled accent background per the selection styling contract.
+		nameStyle = nameStyle.Background(lipgloss.Color("4")).Foreground(lipgloss.Color("15"))
+	}
+	name := nameStyle.Bold(focused).
 		Render(TruncateName(SanitizeName(e.Name), innerWidth))
 
-	var lines []string
-	switch zoom {
-	case ZoomCompact:
-		// Icon and truncated name share the single content line.
-		glyphWidth := ansi.StringWidth(glyph)
-		nameWidth := max(innerWidth-glyphWidth-1, 1)
-		lines = []string{
-			label + " " + categoryStyle(category).Bold(focused).
-				Render(TruncateName(SanitizeName(e.Name), nameWidth)),
-		}
-	case ZoomDetailed:
-		// Name plus size, permissions, and modification time.
-		meta, when := EntryMeta(e)
-		lines = []string{
-			lipgloss.PlaceHorizontal(innerWidth, lipgloss.Center, label),
-			name,
-			lipgloss.NewStyle().Faint(true).Render(TruncateName(meta, innerWidth)),
-			lipgloss.NewStyle().Faint(true).Render(TruncateName(when, innerWidth)),
-		}
-	case ZoomNormal:
-		lines = []string{
-			lipgloss.PlaceHorizontal(innerWidth, lipgloss.Center, label),
-			"",
-			name,
-		}
-	}
+	lines := cardLines(e, zoom, innerWidth, label, name)
 
 	border := lipgloss.RoundedBorder()
 	borderForeground := categoryColor[category]
@@ -158,4 +152,40 @@ func RenderCard(e browser.Entry, zoom ZoomLevel, focused bool, icons IconMode) s
 
 func categoryStyle(c Category) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(categoryColor[c])
+}
+
+// cardLines composes the content lines for one zoom level.
+func cardLines(e browser.Entry, zoom ZoomLevel, innerWidth int, label, name string) []string {
+	switch zoom {
+	case ZoomCompact:
+		// Icon and truncated name share the single content line.
+		glyph := iconsGlyphWidth(label)
+		nameWidth := max(innerWidth-glyph-1, 1)
+		truncated := TruncateName(SanitizeName(e.Name), nameWidth)
+
+		return []string{label + " " + truncated}
+	case ZoomDetailed:
+		meta, when := EntryMeta(e)
+
+		return []string{
+			lipgloss.PlaceHorizontal(innerWidth, lipgloss.Center, label),
+			name,
+			lipgloss.NewStyle().Faint(true).Render(TruncateName(meta, innerWidth)),
+			lipgloss.NewStyle().Faint(true).Render(TruncateName(when, innerWidth)),
+		}
+	case ZoomNormal:
+		return []string{
+			lipgloss.PlaceHorizontal(innerWidth, lipgloss.Center, label),
+			"",
+			name,
+		}
+	}
+
+	return []string{name}
+}
+
+// iconsGlyphWidth measures the display width of a rendered glyph, ignoring
+// styling escapes.
+func iconsGlyphWidth(label string) int {
+	return ansi.StringWidth(ansi.Strip(label))
 }
