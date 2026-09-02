@@ -1,0 +1,76 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - gridfm
+
+linters:
+  default: all
+  disable:
+    # Requires a dependency allow/deny policy; add once we decide external deps.
+    - depguard
+    # Replaced by gomodguard_v2, which we enable explicitly below.
+    - gomodguard
+    # Demands fully-populated struct literals everywhere; too noisy for view
+    # models. Both generations ship in `default: all`.
+    - exhaustruct
+    - exhaustruct_v5
+    # Magic numbers are pervasive in terminal layout math; revisit with named constants.
+    - mnd
+    # Bans short loop/index variable names that are idiomatic in Go.
+    - varnamelen
+    # Blank-line placement rules; gofmt plus revive cover the useful parts.
+    # Both generations ship in `default: all`.
+    - wsl
+    - wsl_v5
+    # Audits string literals for untranslated locales; this project is not localized.
+    - gosmopolitan
+  enable:
+    # Successor of the deprecated gomodguard linter that ships in `default: all`.
+    - gomodguard_v2
+  settings:
+    # Bubble Tea's programming model is built on returning the tea.Model
+    # interface from Update; returning concrete models is not possible there.
+    ireturn:
+      allow:
+        - error
+        - empty
+        - stdlib
+        - github.com/charmbracelet/bubbletea
+    govet:
+      enable-all: true
+      disable:
+        # Field-reordering micro-optimisation; known to misfire on idiomatic
+        # code (it flags parts of the standard library). Memory layout has no
+        # measurable effect here; revisit only with a profiling reason.
+        - fieldalignment
+    nolintlint:
+      allow-unused: false
+      require-explanation: true
+      require-specific: true
+    staticcheck:
+      checks:
+        - all
+  exclusions:
+    generated: lax
+    rules:
+      # Tests legitimately repeat fixtures, use globals for shared state,
+      # contain long functions, and touch real paths. Struct layout of
+      # throwaway test tables does not affect production memory.
+      - path: _test\.go
+        linters:
+          - dupl
+          - fieldalignment
+          - funlen
+          - gochecknoglobals
+          - goconst
+          - gosec
+          - lll
