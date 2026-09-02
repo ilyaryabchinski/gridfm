@@ -46,17 +46,52 @@ func TestHistoryNewNavigationDropsForwardEntries(t *testing.T) {
 	b.SetEntries("/root", []browser.Entry{{Name: "x", Path: "/root/x"}})
 	b.SetEntries("/root/sub", []browser.Entry{{Name: "y", Path: "/root/sub/y"}})
 
-	if _, ok := b.Back(); !ok {
-		t.Fatal("Back should be available")
+	// A confirmed back move, then fresh navigation: the forward entry that
+	// sat ahead of /root is discarded.
+	got, ok := b.Back()
+	if !ok || got != "/root" {
+		t.Fatalf("Back() = %q, %v; want /root, true", got, ok)
 	}
+	b.SetEntries("/root", []browser.Entry{{Name: "x", Path: "/root/x"}})
 
-	// Navigating somewhere new from the past discards the forward entry.
 	b.SetEntries("/elsewhere", []browser.Entry{{Name: "e", Path: "/elsewhere/e"}})
 	if b.CanForward() {
 		t.Error("forward stack should be dropped after new navigation")
 	}
 	if got, ok := b.Back(); !ok || got != "/root" {
 		t.Errorf("Back after new navigation = %q, %v; want /root, true", got, ok)
+	}
+}
+
+func TestHistoryAbandonedBackKeepsCursorConsistent(t *testing.T) {
+	t.Parallel()
+
+	b := browser.New("/root")
+	b.SetEntries("/root", []browser.Entry{{Name: "x", Path: "/root/x"}})
+	b.SetEntries("/root/sub", []browser.Entry{{Name: "y", Path: "/root/sub/y"}})
+
+	// Back starts a traversal, but the load fails and the step is
+	// cancelled: the cursor stays on /root/sub and the traversal can be
+	// retried.
+	got, ok := b.Back()
+	if !ok || got != "/root" {
+		t.Fatalf("Back() = %q, %v; want /root, true", got, ok)
+	}
+	b.CancelHistoryStep()
+
+	if !b.CanBack() {
+		t.Error("back should still be available after a cancelled step")
+	}
+	got, ok = b.Back()
+	if !ok || got != "/root" {
+		t.Errorf("retry Back() = %q, %v; want /root, true", got, ok)
+	}
+
+	// A mismatched load while a step is in flight treats it as abandoned:
+	// navigating elsewhere from /root/sub makes /elsewhere the newest.
+	b.SetEntries("/elsewhere", []browser.Entry{{Name: "e", Path: "/elsewhere/e"}})
+	if b.CanForward() {
+		t.Error("abandoned step must not preserve a forward entry")
 	}
 }
 

@@ -5,9 +5,6 @@
 package open
 
 import (
-	"context"
-	"fmt"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -71,21 +68,4 @@ func EditorCommand() (string, []string, bool) {
 	}
 
 	return "", nil, false
-}
-
-// DesktopOpen hands a path to xdg-open without blocking. The process is
-// reaped in the background; the returned error covers only the failure to
-// start it.
-func DesktopOpen(path string) error {
-	//nolint:gosec // xdg-open is a fixed program; the path is passed as an argument, never a shell string
-	cmd := exec.CommandContext(context.Background(), "xdg-open", path)
-
-	err := cmd.Start()
-	if err != nil {
-		return fmt.Errorf("start xdg-open: %w", err)
-	}
-
-	go func() { _ = cmd.Wait() }()
-
-	return nil
 }

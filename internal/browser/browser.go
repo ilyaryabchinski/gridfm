@@ -24,7 +24,20 @@ type Browser struct {
 
 	history    []string
 	historyPos int
+	// pendingStep records an in-flight back or forward move. The history
+	// position commits only when the matching load confirms it, so a
+	// failed traversal leaves the cursor consistent for a retry.
+	pendingStep histStep
 }
+
+// histStep is the direction of an in-flight history traversal.
+type histStep int
+
+const (
+	histNone histStep = iota
+	histBack
+	histForward
+)
 
 // New returns a browser rooted at path with no entries loaded yet.
 func New(path string) Browser {
@@ -163,8 +176,15 @@ func (b *Browser) SetEntries(path string, entries []Entry) {
 	}
 
 	if !sameDir || len(b.history) == 0 {
-		b.recordHistory(path)
+		b.commitHistory(path)
 	}
+}
+
+// CancelHistoryStep abandons an in-flight back or forward move after a
+// failed load, keeping the history position on the current location so the
+// traversal can be retried.
+func (b *Browser) CancelHistoryStep() {
+	b.pendingStep = histNone
 }
 
 // FocusEntryInVisible moves focus to the visible entry at path. It reports
@@ -181,35 +201,41 @@ func (b *Browser) FocusEntryInVisible(path string) bool {
 	return false
 }
 
-// CanBack reports whether there is a location behind the current one.
-func (b *Browser) CanBack() bool { return b.historyPos > 1 }
+// CanBack reports whether there is a location behind the current one. It is
+// false while a traversal is in flight so steps cannot stack up.
+func (b *Browser) CanBack() bool {
+	return b.pendingStep == histNone && b.historyPos > 1
+}
 
 // CanForward reports whether there is a location ahead of the current one.
-func (b *Browser) CanForward() bool { return b.historyPos < len(b.history) }
+// It is false while a traversal is in flight.
+func (b *Browser) CanForward() bool {
+	return b.pendingStep == histNone && b.historyPos < len(b.history)
+}
 
-// Back returns the previous location and moves the history position to it.
-// The caller confirms the move by loading that path; the resulting
-// SetEntries call updates state without pushing a duplicate.
+// Back returns the previous location and marks the move in flight. The
+// history position commits only when the caller confirms the move by
+// loading that path; a failed load must call CancelHistoryStep.
 func (b *Browser) Back() (string, bool) {
 	if !b.CanBack() {
 		return "", false
 	}
 
-	b.historyPos--
+	b.pendingStep = histBack
 
-	return b.history[b.historyPos-1], true
+	return b.history[b.historyPos-2], true
 }
 
-// Forward returns the next location and moves the history position to it,
-// mirroring Back.
+// Forward returns the next location and marks the move in flight, mirroring
+// Back.
 func (b *Browser) Forward() (string, bool) {
 	if !b.CanForward() {
 		return "", false
 	}
 
-	b.historyPos++
+	b.pendingStep = histForward
 
-	return b.history[b.historyPos-1], true
+	return b.history[b.historyPos], true
 }
 
 func (b *Browser) sortEntries(entries []Entry) {
@@ -233,11 +259,28 @@ func (b *Browser) restoreFocus(previousPath string, previousIndex int) {
 	b.grid.SetFocus(min(previousIndex, max(len(b.visible)-1, 0)))
 }
 
-// recordHistory pushes a newly confirmed location, dropping any forward
-// entries. The history position indexes one past the current location, so
-// confirming a back or forward move keeps the position set earlier instead
-// of pushing a duplicate.
-func (b *Browser) recordHistory(path string) {
+// commitHistory records a confirmed location. An in-flight back or forward
+// move commits its position change when the loaded path matches; anything
+// else is a fresh navigation that drops any forward entries. The history
+// position indexes one past the current location.
+func (b *Browser) commitHistory(path string) {
+	switch {
+	case b.pendingStep == histBack && b.historyPos >= 2 && b.history[b.historyPos-2] == path:
+		b.historyPos--
+		b.pendingStep = histNone
+
+		return
+	case b.pendingStep == histForward && b.historyPos < len(b.history) && b.history[b.historyPos] == path:
+		b.historyPos++
+		b.pendingStep = histNone
+
+		return
+	case b.pendingStep != histNone:
+		// A stale or mismatched step resolved elsewhere: drop it and treat
+		// the load as fresh navigation.
+		b.pendingStep = histNone
+	}
+
 	if len(b.history) > 0 && b.history[b.historyPos-1] == path {
 		return
 	}

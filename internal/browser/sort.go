@@ -62,7 +62,8 @@ func (o SortOrder) Opposite() SortOrder {
 
 // SortEntries orders entries in place: directories first, then the primary
 // key for the mode, then case-insensitive name, raw name, and full path as
-// ascending tie-breakers.
+// ascending tie-breakers. Only the primary key respects the order; groups
+// of equal primary keys always list in ascending name order.
 func SortEntries(entries []Entry, mode SortMode, order SortOrder) {
 	slices.SortFunc(entries, func(a, b Entry) int {
 		return compareEntries(a, b, mode, order)
@@ -79,11 +80,11 @@ func compareEntries(a, b Entry, mode SortMode, order SortOrder) int {
 	}
 
 	c := comparePrimary(a, b, mode)
+	if order == SortDescending {
+		c = -c
+	}
 	if c == 0 {
 		c = compareNames(a, b)
-	}
-	if order == SortDescending {
-		return -c
 	}
 
 	return c
