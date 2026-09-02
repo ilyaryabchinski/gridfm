@@ -221,6 +221,25 @@ func TestGridEmptyMovementIsNoOp(t *testing.T) {
 	}
 }
 
+func TestGridSetColumnsReDerivesPreferredColumn(t *testing.T) {
+	t.Parallel()
+
+	// 12 entries. At 4 columns focus 7 sits at row 1, col 3 with preferred
+	// column 3. After switching to 3 columns focus 7 sits at row 2, col 1,
+	// so the next Down must land on row 3, col 1 (index 10) — not sideways
+	// onto the stale preferred column (index 11).
+	g := browser.NewGrid(12, 4)
+	g.SetFocus(7)
+
+	g.SetColumns(3)
+	if g.Focus() != 7 {
+		t.Fatalf("SetColumns moved focus to %d, want 7 (identity preserved)", g.Focus())
+	}
+	if !g.Down() || g.Focus() != 10 {
+		t.Errorf("Down after resize moved focus to %d, want 10 (column follows focus)", g.Focus())
+	}
+}
+
 func TestGridResizePreservesFocusedEntry(t *testing.T) {
 	t.Parallel()
 

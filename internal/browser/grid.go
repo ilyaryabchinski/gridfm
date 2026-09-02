@@ -63,14 +63,16 @@ func (g *Grid) Rows() int {
 }
 
 // SetColumns resizes the grid. The focused entry is preserved by identity:
-// the list is unchanged, so the focused index stays and the preferred column
-// is re-derived from it.
+// the list is unchanged, so the focused index stays, and the preferred
+// column is re-derived from the focused entry's new visual column so
+// vertical movement continues from where focus actually sits.
 func (g *Grid) SetColumns(columns int) {
 	if columns < 1 {
 		columns = 1
 	}
 	g.columns = columns
 	g.clamp()
+	g.prefCol = g.FocusedColumn()
 }
 
 // SetCount adjusts the entry count, clamping focus to the nearest surviving
