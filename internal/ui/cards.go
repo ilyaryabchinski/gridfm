@@ -128,10 +128,10 @@ func RenderCard(e browser.Entry, zoom ZoomLevel, state CardState, icons IconMode
 		// Filled accent background per the selection styling contract.
 		nameStyle = nameStyle.Background(lipgloss.Color("4")).Foreground(lipgloss.Color("15"))
 	}
-	name := nameStyle.Bold(focused).
-		Render(TruncateName(SanitizeName(e.Name), innerWidth))
+	styledName := nameStyle.Bold(focused)
+	name := styledName.Render(TruncateName(SanitizeName(e.Name), innerWidth))
 
-	lines := cardLines(e, zoom, innerWidth, label, name)
+	lines := cardLines(e, zoom, innerWidth, label, name, styledName)
 
 	border := lipgloss.RoundedBorder()
 	borderForeground := categoryColor[category]
@@ -154,14 +154,16 @@ func categoryStyle(c Category) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(categoryColor[c])
 }
 
-// cardLines composes the content lines for one zoom level.
-func cardLines(e browser.Entry, zoom ZoomLevel, innerWidth int, label, name string) []string {
+// cardLines composes the content lines for one zoom level. styledName is
+// the fully styled name renderer, reused by the compact branch so its
+// truncated name keeps the selected, dimmed, and focus styling.
+func cardLines(e browser.Entry, zoom ZoomLevel, innerWidth int, label, name string, styledName lipgloss.Style) []string {
 	switch zoom {
 	case ZoomCompact:
 		// Icon and truncated name share the single content line.
 		glyph := iconsGlyphWidth(label)
 		nameWidth := max(innerWidth-glyph-1, 1)
-		truncated := TruncateName(SanitizeName(e.Name), nameWidth)
+		truncated := styledName.Render(TruncateName(SanitizeName(e.Name), nameWidth))
 
 		return []string{label + " " + truncated}
 	case ZoomDetailed:
