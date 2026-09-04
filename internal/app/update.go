@@ -83,7 +83,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) applyOperationEvent(ev operations.Event) (tea.Model, tea.Cmd) {
 	switch e := ev.(type) {
 	case operations.ProgressEvent:
-		m.opProgress = &opProgress{kind: e.Kind, done: e.Done, total: e.Total, target: e.Target}
+		m.opProgress = &opProgress{
+			kind:       e.Kind,
+			done:       e.Done,
+			total:      e.Total,
+			target:     e.Target,
+			bytes:      e.ItemBytes,
+			bytesTotal: e.ItemBytesTotal,
+		}
 
 	case operations.QuestionEvent:
 		// Only one blocking overlay may be active; the question wins.
@@ -259,7 +266,9 @@ func (m *Model) handleResultsKeys(key string) (tea.Model, tea.Cmd) {
 func (m *Model) handleNormalKeys(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "ctrl+c":
-		return m, tea.Quit
+		// Quitting with active jobs is an explicit decision, so ctrl+c
+		// takes the same confirmed path as q.
+		return m.requestQuit()
 	case "q":
 		return m.requestQuit()
 	case keyTab:

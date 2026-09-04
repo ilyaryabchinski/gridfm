@@ -18,7 +18,7 @@ import (
 // entry beside it. The trash never overwrites anything. Cross-filesystem
 // sources fall back to copy-then-remove, and the source is only removed
 // after the copy fully succeeds.
-func trashItem(ctx context.Context, src string, resolve conflictResolver) error {
+func trashItem(ctx context.Context, src string, resolve conflictResolver, report func(done, total int64)) error {
 	root, err := trashRoot()
 	if err != nil {
 		return err
@@ -40,7 +40,7 @@ func trashItem(ctx context.Context, src string, resolve conflictResolver) error 
 		return writeErr
 	}
 
-	if moveErr := moveIntoTrash(ctx, src, dst, resolve); moveErr != nil {
+	if moveErr := moveIntoTrash(ctx, src, dst, resolve, report); moveErr != nil {
 		// The source was not (fully) moved; the reserved record must not
 		// survive on its own.
 		_ = os.Remove(infoPath)
@@ -53,15 +53,15 @@ func trashItem(ctx context.Context, src string, resolve conflictResolver) error 
 
 // moveIntoTrash relocates the source into its reserved trash slot: rename
 // on the same filesystem, copy-then-remove across filesystems.
-func moveIntoTrash(ctx context.Context, src, dst string, resolve conflictResolver) error {
+func moveIntoTrash(ctx context.Context, src, dst string, resolve conflictResolver, report func(done, total int64)) error {
 	err := renameFn(src, dst)
 	if errors.Is(err, errCrossDevice) {
-		copyErr := copyEntry(ctx, src, dst, resolve)
+		copyErr := copyEntry(ctx, src, dst, resolve, report)
 		if copyErr != nil {
 			return copyErr
 		}
 
-		rmErr := os.RemoveAll(src)
+		rmErr := removeAll(ctx, src)
 		if rmErr != nil {
 			return fmt.Errorf("remove trashed source %q: %w", src, rmErr)
 		}

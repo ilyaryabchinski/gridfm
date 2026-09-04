@@ -2,9 +2,11 @@ package operations_test
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"gridfm/internal/operations"
 )
@@ -296,6 +298,119 @@ func TestCopyReadOnlyDirectory(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o555 {
 		t.Errorf("copied mode = %v, want 555", info.Mode().Perm())
+	}
+}
+
+// TestCopyReportsByteProgress pins intra-item progress: a large file copy
+// publishes progress events carrying byte counts while it runs, before the
+// item completes.
+func TestCopyReportsByteProgress(t *testing.T) {
+	t.Parallel()
+
+	srcDir := t.TempDir()
+	dstDir := t.TempDir()
+	src := filepath.Join(srcDir, "big.bin")
+	// Several multiples of the copy buffer size so many read chunks occur.
+	const size = 1 << 20
+	big := make([]byte, size)
+	if writeErr := os.WriteFile(src, big, 0o644); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+
+	mgr := operations.NewManager()
+	mgr.SetProgressInterval(0) // publish every callback, no throttling
+	enqueueErr := mgr.Enqueue(operations.Operation{
+		ID:    "copy-bytes",
+		Kind:  operations.OpCopy,
+		Items: []operations.Item{{Source: src, Target: filepath.Join(dstDir, "big.bin")}},
+	})
+	if enqueueErr != nil {
+		t.Fatal(enqueueErr)
+	}
+
+	var sawStarted, sawPartial, sawFinal bool
+	for {
+		ev := <-mgr.Events()
+		switch e := ev.(type) {
+		case operations.ProgressEvent:
+			if e.ItemBytesTotal == int64(size) {
+				sawStarted = true
+				if e.ItemBytes > 0 && e.ItemBytes < int64(size) {
+					sawPartial = true
+				}
+				if e.ItemBytes == int64(size) {
+					sawFinal = true
+				}
+			}
+		case operations.FinishedEvent:
+			if e.Result.Succeeded != 1 {
+				t.Fatalf("result = %+v, want 1 succeeded", e.Result)
+			}
+
+			if !sawStarted {
+				t.Error("no intra-item progress reported the item's total size")
+			}
+			if !sawPartial {
+				t.Error("no intra-item progress reported partial byte counts")
+			}
+			if !sawFinal {
+				t.Error("intra-item progress never reached the full size")
+			}
+
+			return
+		}
+	}
+}
+
+// TestEnqueueRejectsWhenQueueFull pins the bounded queue contract: once the
+// queue holds its capacity of pending jobs, further enqueues are rejected
+// with ErrQueueFull instead of blocking or dropping.
+func TestEnqueueRejectsWhenQueueFull(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	mgr := operations.NewManager()
+	// The queue is only reachable when the worker cannot consume: block it
+	// on its first unbuffered publication, which is deterministic now that
+	// items are announced before they run.
+	var enqueued int
+	for {
+		err := mgr.Enqueue(operations.Operation{
+			ID:    fmt.Sprintf("fill-%d", enqueued),
+			Kind:  operations.OpCreateFile,
+			Items: []operations.Item{{Target: filepath.Join(dir, fmt.Sprintf("f%d", enqueued))}},
+		})
+		if err != nil {
+			if !errors.Is(err, operations.ErrQueueFull) {
+				t.Fatalf("enqueue = %v, want ErrQueueFull", err)
+			}
+
+			break
+		}
+		enqueued++
+	}
+	if enqueued == 0 {
+		t.Fatal("queue never accepted any jobs")
+	}
+	// Busy reflects the backlog; draining finishes everything.
+	if !mgr.Busy() {
+		t.Fatal("a full queue must report busy")
+	}
+	for finished := 0; finished < enqueued; {
+		ev := <-mgr.Events()
+		if _, ok := ev.(operations.FinishedEvent); ok {
+			finished++
+		}
+	}
+	// The final in-flight decrement runs in the worker's deferred cleanup,
+	// just after the last result is received; give it a moment.
+	deadline := time.Now().Add(time.Second)
+	for mgr.Busy() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if mgr.Busy() {
+		t.Error("busy must clear once every job finished")
 	}
 }
 

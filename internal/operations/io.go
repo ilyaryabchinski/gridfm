@@ -42,3 +42,8 @@ func ioCopy(ctx context.Context, dst io.Writer, src io.Reader) (int64, error) {
 type readFunc func(p []byte) (int, error)
 
 func (f readFunc) Read(p []byte) (int, error) { return f(p) }
+
+// writeFunc adapts a function to io.Writer.
+type writeFunc func(p []byte) (int, error)
+
+func (f writeFunc) Write(p []byte) (int, error) { return f(p) }

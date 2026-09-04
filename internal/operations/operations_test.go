@@ -458,8 +458,10 @@ func TestCancelMarksResultAndStopsWork(t *testing.T) {
 	if got := result.Succeeded + result.Skipped + result.Failed + result.NotRun; got != 5 {
 		t.Fatalf("accounting does not add up (%d): %+v", got, result)
 	}
-	if result.Succeeded < 1 {
-		t.Fatalf("the first item should have completed: %+v", result)
+	// Items are announced before they run, so the cancel lands inside the
+	// first item: it is accounted as a cancelled failure, not a success.
+	if result.Succeeded > 1 {
+		t.Fatalf("the cancel should have stopped work early: %+v", result)
 	}
 	for _, failure := range result.Failures {
 		if failure.Path == "" {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 )
 
 // runJob executes one job to completion: serial items, conflict questions,
@@ -32,7 +33,25 @@ func (m *Manager) runJob(j *job) {
 			break
 		}
 
-		err := runItem(ctx, j.op.Kind, item, coordinator)
+		// Announce the item before it runs: the shelf names the current
+		// target and offers the cancel control from the first moment of a
+		// long item, not only after it completes.
+		reporter := &itemReporter{
+			m:      m,
+			ctx:    ctx,
+			opID:   j.op.ID,
+			kind:   j.op.Kind,
+			done:   accounts,
+			total:  len(j.op.Items),
+			target: progressTarget(item),
+		}
+		if err := m.publish(ctx, reporter.started()); err != nil {
+			result.Cancelled = true
+
+			break
+		}
+
+		err := runItem(ctx, j.op.Kind, item, coordinator, reporter.bytes)
 		switch {
 		case err == nil:
 			result.Succeeded++
@@ -46,10 +65,10 @@ func (m *Manager) runJob(j *job) {
 		case errors.Is(err, context.Canceled):
 			result.Cancelled = true
 			result.Failed++
-			result.Failures = append(result.Failures, ItemError{Path: item.Target, Err: err})
+			result.Failures = append(result.Failures, ItemError{Path: itemPath(item), Err: err})
 		default:
 			result.Failed++
-			result.Failures = append(result.Failures, ItemError{Path: item.Target, Err: err})
+			result.Failures = append(result.Failures, ItemError{Path: itemPath(item), Err: err})
 		}
 		accounts++
 
@@ -60,7 +79,7 @@ func (m *Manager) runJob(j *job) {
 			Kind:   j.op.Kind,
 			Done:   accounts,
 			Total:  len(j.op.Items),
-			Target: item.Target,
+			Target: progressTarget(item),
 		})
 
 		if ctx.Err() != nil {
@@ -73,6 +92,63 @@ func (m *Manager) runJob(j *job) {
 	m.publishResult(FinishedEvent{ID: j.op.ID, Result: finish(result, j.op, accounts)})
 }
 
+// progressTarget names the path a display shows for the item: the target
+// when the kind carries one, otherwise the affected source.
+func progressTarget(item Item) string {
+	return itemPath(item)
+}
+
+// itemPath returns the path a failure should name: the target for
+// destination-carrying kinds, the source for trash and delete.
+func itemPath(item Item) string {
+	if item.Target != "" {
+		return item.Target
+	}
+
+	return item.Source
+}
+
+// itemReporter publishes progress for the running item: the start
+// announcement, its completion, and throttled byte-level progress fed from
+// the copy primitives.
+type itemReporter struct {
+	m      *Manager
+	ctx    context.Context
+	opID   string
+	kind   Kind
+	done   int
+	total  int
+	target string
+	last   time.Time
+}
+
+func (r *itemReporter) started() ProgressEvent {
+	return ProgressEvent{ID: r.opID, Kind: r.kind, Done: r.done, Total: r.total, Target: r.target}
+}
+
+// bytes reports intra-item copy progress. Publications are rate-limited by
+// the manager's interval so a multi-gigabyte file cannot flood the
+// consumer; the per-item events before and after always get through.
+func (r *itemReporter) bytes(done, total int64) {
+	if total <= 0 || done <= 0 {
+		return
+	}
+	if gap := r.m.progressGap(); gap > 0 && time.Since(r.last) < gap {
+		return
+	}
+
+	r.last = time.Now()
+	_ = r.m.publish(r.ctx, ProgressEvent{
+		ID:             r.opID,
+		Kind:           r.kind,
+		Done:           r.done,
+		Total:          r.total,
+		Target:         r.target,
+		ItemBytes:      done,
+		ItemBytesTotal: total,
+	})
+}
+
 // finish closes out the counters: whatever was not accounted for did not
 // run.
 func finish(result Result, op Operation, accounts int) Result {
@@ -81,13 +157,14 @@ func finish(result Result, op Operation, accounts int) Result {
 	return result
 }
 
-// runItem dispatches one item to its mutation primitive.
-func runItem(ctx context.Context, kind Kind, item Item, resolve conflictResolver) error {
+// runItem dispatches one item to its mutation primitive. report receives
+// cumulative byte progress for kinds that copy bytes.
+func runItem(ctx context.Context, kind Kind, item Item, resolve conflictResolver, report func(done, total int64)) error {
 	switch kind {
 	case OpCopy:
-		return copyEntry(ctx, item.Source, item.Target, resolve)
+		return copyEntry(ctx, item.Source, item.Target, resolve, report)
 	case OpMove:
-		return moveEntry(ctx, item.Source, item.Target, resolve)
+		return moveEntry(ctx, item.Source, item.Target, resolve, report)
 	case OpRename:
 		return renameItem(ctx, item.Source, item.Target, resolve)
 	case OpCreateFile:
@@ -95,9 +172,9 @@ func runItem(ctx context.Context, kind Kind, item Item, resolve conflictResolver
 	case OpCreateDir:
 		return createDir(item.Target)
 	case OpTrash:
-		return trashItem(ctx, item.Source, resolve)
+		return trashItem(ctx, item.Source, resolve, report)
 	case OpDelete:
-		return deleteItem(item.Source)
+		return deleteItem(ctx, item.Source)
 	}
 
 	return fmt.Errorf("%w: %d", ErrUnknownKind, kind)
@@ -152,11 +229,10 @@ func createDir(path string) error {
 	return nil
 }
 
-func deleteItem(src string) error {
-	removeErr := os.RemoveAll(src)
-	if removeErr != nil {
-		return fmt.Errorf("delete %q: %w", src, removeErr)
-	}
-
-	return nil
+// deleteItem permanently removes the entry and everything beneath it. The
+// traversal checks the context between entries, so a cancelled job stops
+// walking instead of finishing a huge deletion unnoticed. A path that
+// vanished before the job ran is a successful no-op.
+func deleteItem(ctx context.Context, src string) error {
+	return removeAll(ctx, src)
 }

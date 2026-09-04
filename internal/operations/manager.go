@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync/atomic"
+	"time"
 )
 
 // Manager runs mutation jobs strictly one at a time. Jobs are enqueued from
@@ -17,6 +18,23 @@ type Manager struct {
 
 	// inFlight counts jobs from enqueue until finish.
 	inFlight atomic.Int64
+
+	// progressEvery is the minimum gap between intra-item byte progress
+	// publications, so a huge copy cannot flood the consumer.
+	progressEvery atomic.Int64 // nanoseconds
+}
+
+// progressInterval is the default minimum gap between byte progress events.
+const progressInterval = 100 * time.Millisecond
+
+// SetProgressInterval overrides the minimum gap between intra-item byte
+// progress publications; zero publishes on every callback.
+func (m *Manager) SetProgressInterval(d time.Duration) {
+	m.progressEvery.Store(int64(d))
+}
+
+func (m *Manager) progressGap() time.Duration {
+	return time.Duration(m.progressEvery.Load())
 }
 
 // Event is one manager publication: progress, a conflict question, or a
@@ -25,13 +43,19 @@ type Event interface {
 	OpID() string
 }
 
-// ProgressEvent reports per-item advancement of the active job.
+// ProgressEvent reports advancement of the active job. One event announces
+// an item when it starts, one closes it when it finishes, and a copy item
+// publishes byte-level intra-item progress between the two.
 type ProgressEvent struct {
 	ID     string
 	Kind   Kind
 	Done   int
 	Total  int
 	Target string
+	// ItemBytes and ItemBytesTotal describe the running item's byte
+	// progress. Both are zero when the item has no measurable size.
+	ItemBytes      int64
+	ItemBytesTotal int64
 }
 
 // OpID identifies the job the progress belongs to.
@@ -90,6 +114,7 @@ func NewManager() *Manager {
 		events: make(chan Event),
 		queue:  make(chan *job, queueCapacity),
 	}
+	m.progressEvery.Store(int64(progressInterval))
 
 	go m.worker()
 

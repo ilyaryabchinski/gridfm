@@ -219,6 +219,93 @@ func TestSelectAnchorFollowsEntryAfterSort(t *testing.T) {
 	}
 }
 
+// TestBusyCtrlCRequiresQuitConfirmation pins quit parity: ctrl+c with an
+// operation in flight opens the confirmation instead of quitting outright.
+func TestBusyCtrlCRequiresQuitConfirmation(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	m := gridOnly(t, resize(t, app.New(root, app.Options{}), 80, 24))
+	m = loaded(t, m, 1, root, entriesAt(root, 2), nil)
+
+	// Enqueue a job without draining events: the worker announces the item
+	// and then blocks on the unbuffered event stream, so the job is
+	// reliably in flight.
+	if err := m.EnqueueOperation(operations.Operation{
+		ID:   "busy-op",
+		Kind: operations.OpCreateFile,
+		Items: []operations.Item{
+			{Target: filepath.Join(root, "pending.txt")},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !m.Busy() {
+		t.Fatal("the enqueued job should be in flight")
+	}
+
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	updated, ok := next.(*app.Model)
+	if !ok {
+		t.Fatalf("Update returned %T, want *app.Model", next)
+	}
+	if cmd != nil {
+		t.Fatal("ctrl+c during a running operation must not quit outright")
+	}
+	if view := updated.View(); !strings.Contains(view, "QUIT?") {
+		t.Error("ctrl+c during a running operation should ask for confirmation")
+	}
+
+	// Confirming proceeds with the quit.
+	_, cmd = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	if cmd == nil {
+		t.Error("confirming the quit dialog should produce a quit command")
+	}
+}
+
+// TestIdleCtrlCQuitsWithoutConfirmation pins the idle path: with nothing
+// running, ctrl+c quits immediately.
+func TestIdleCtrlCQuitsWithoutConfirmation(t *testing.T) {
+	t.Parallel()
+
+	m := resize(t, app.New("/d", app.Options{}), 80, 24)
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if cmd == nil {
+		t.Error("idle ctrl+c should quit immediately")
+	}
+}
+
+// TestShelfShowsByteProgress pins the shelf rendering for a copy with byte
+// counts: the totals render in human units next to the item counters.
+func TestShelfShowsByteProgress(t *testing.T) {
+	t.Parallel()
+
+	m := gridOnly(t, resize(t, app.New("/d", app.Options{}), 80, 24))
+	m = loaded(t, m, 1, "/d", entriesAt("/d", 2), nil)
+
+	m = feed(t, m, app.OperationEventMsg{
+		Event: operations.ProgressEvent{
+			ID: "op-1", Kind: operations.OpCopy, Done: 0, Total: 1,
+			Target: "/d/big.bin", ItemBytes: 1_600_000, ItemBytesTotal: 4_000_000,
+		},
+	})
+
+	view := m.View()
+	for _, want := range []string{"0/1", "1.5 MB", "3.8 MB", "c cancels"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("shelf should show %q, got %q", want, view)
+		}
+	}
+
+	// An item without measurable size renders no byte segment.
+	m = feed(t, m, app.OperationEventMsg{
+		Event: operations.ProgressEvent{ID: "op-1", Kind: operations.OpDelete, Done: 0, Total: 1, Target: "/d/x"},
+	})
+	if view := m.View(); strings.Contains(view, "MB") {
+		t.Errorf("delete progress should not show byte counts: %q", view)
+	}
+}
+
 // TestLoadErrorNoteClearsOnSuccessfulRetry pins that a load error note is
 // cleared exactly when a retry succeeds, not on every unrelated load.
 func TestLoadErrorNoteClearsOnSuccessfulRetry(t *testing.T) {

@@ -19,8 +19,9 @@ type conflictResolver interface {
 
 // copyEntry copies one filesystem entry recursively. Symlinks are copied
 // as symlinks and never traversed; file modes and modification times are
-// preserved where the filesystem allows.
-func copyEntry(ctx context.Context, src, dst string, resolve conflictResolver) error {
+// preserved where the filesystem allows. report, when non-nil, receives
+// cumulative byte progress for the file being copied.
+func copyEntry(ctx context.Context, src, dst string, resolve conflictResolver, report func(done, total int64)) error {
 	info, err := os.Lstat(src)
 	if err != nil {
 		return fmt.Errorf("lstat %q: %w", src, err)
@@ -64,11 +65,11 @@ func copyEntry(ctx context.Context, src, dst string, resolve conflictResolver) e
 			return replaceErr
 		}
 
-		return copyDir(ctx, src, dst, info, resolve)
+		return copyDir(ctx, src, dst, info, resolve, report)
 	default:
 		// The source is opened before any replacement removal: an
 		// unreadable or vanished source must not destroy the destination.
-		return copyFile(ctx, src, dst, info, action)
+		return copyFile(ctx, src, dst, info, action, report)
 	}
 }
 
@@ -135,7 +136,7 @@ func createSymlink(target, dst string) error {
 	return nil
 }
 
-func copyDir(ctx context.Context, src, dst string, info fs.FileInfo, resolve conflictResolver) error {
+func copyDir(ctx context.Context, src, dst string, info fs.FileInfo, resolve conflictResolver, report func(done, total int64)) error {
 	// The destination is created owner-writable even when the source mode
 	// is read-only, so its children can be populated; the source mode is
 	// restored only after the contents are in place. An existing
@@ -162,7 +163,7 @@ func copyDir(ctx context.Context, src, dst string, info fs.FileInfo, resolve con
 
 		childSrc := filepath.Join(src, entry.Name())
 		childDst := filepath.Join(dst, entry.Name())
-		if copyErr := copyEntry(ctx, childSrc, childDst, resolve); copyErr != nil {
+		if copyErr := copyEntry(ctx, childSrc, childDst, resolve, report); copyErr != nil {
 			return copyErr
 		}
 	}
@@ -177,7 +178,7 @@ func copyDir(ctx context.Context, src, dst string, info fs.FileInfo, resolve con
 	return preserveTimes(src, dst)
 }
 
-func copyFile(ctx context.Context, src, dst string, info fs.FileInfo, action ConflictAction) error {
+func copyFile(ctx context.Context, src, dst string, info fs.FileInfo, action ConflictAction, report func(done, total int64)) error {
 	//nolint:gosec // paths come from user-selected entries; this is a file manager
 	srcFile, err := os.Open(src)
 	if err != nil {
@@ -196,7 +197,17 @@ func copyFile(ctx context.Context, src, dst string, info fs.FileInfo, action Con
 		return fmt.Errorf("create %q: %w", dst, err)
 	}
 
-	_, err = ioCopy(ctx, dstFile, srcFile)
+	var written int64
+	total := info.Size()
+	_, err = ioCopy(ctx, writeFunc(func(p []byte) (int, error) {
+		n, writeErr := dstFile.Write(p)
+		written += int64(n)
+		if report != nil {
+			report(written, total)
+		}
+
+		return n, writeErr
+	}), srcFile)
 	if err != nil {
 		// The copy failed: drop the partial destination and report every
 		// error encountered along the way.
@@ -219,7 +230,7 @@ func copyFile(ctx context.Context, src, dst string, info fs.FileInfo, action Con
 // moveEntry moves one entry. Same-filesystem moves use rename; a rename
 // rejected with EXDEV falls back to copy followed by removal, and the
 // source is only removed after the copy fully succeeds.
-func moveEntry(ctx context.Context, src, dst string, resolve conflictResolver) error {
+func moveEntry(ctx context.Context, src, dst string, resolve conflictResolver, report func(done, total int64)) error {
 	action, err := ensureTarget(ctx, dst, resolve)
 	if err != nil {
 		return err
@@ -245,12 +256,12 @@ func moveEntry(ctx context.Context, src, dst string, resolve conflictResolver) e
 
 	// Cross-filesystem: copy first; only a fully successful copy removes
 	// the source, so no failure mode loses data.
-	copyErr := copyEntry(ctx, src, dst, resolve)
+	copyErr := copyEntry(ctx, src, dst, resolve, report)
 	if copyErr != nil {
 		return copyErr
 	}
 
-	removeErr := os.RemoveAll(src)
+	removeErr := removeAll(ctx, src)
 	if removeErr != nil {
 		return fmt.Errorf("remove copied source %q: %w", src, removeErr)
 	}
@@ -288,6 +299,49 @@ func preserveTimes(src, dst string) error {
 	err = os.Chtimes(dst, info.ModTime(), info.ModTime())
 	if err != nil {
 		return fmt.Errorf("chtimes %q: %w", dst, err)
+	}
+
+	return nil
+}
+
+// removeAll removes path and everything beneath it, checking the context
+// between entries so a cancelled job stops walking instead of finishing a
+// huge deletion unnoticed. A missing path is a successful no-op, matching
+// os.RemoveAll. Symlinks are removed as entries, never traversed.
+func removeAll(ctx context.Context, path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+
+		return fmt.Errorf("lstat %q: %w", path, err)
+	}
+
+	if info.IsDir() {
+		entries, readErr := os.ReadDir(path)
+		if readErr != nil && !errors.Is(readErr, fs.ErrNotExist) {
+			return fmt.Errorf("read dir %q: %w", path, readErr)
+		}
+
+		for _, entry := range entries {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr //nolint:wrapcheck // callers match errors.Is(context.Canceled)
+			}
+
+			child := filepath.Join(path, entry.Name())
+			if rmErr := removeAll(ctx, child); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
+				return rmErr
+			}
+		}
+	}
+
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr //nolint:wrapcheck // callers match errors.Is(context.Canceled)
+	}
+
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("remove %q: %w", path, err)
 	}
 
 	return nil

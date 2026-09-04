@@ -198,11 +198,13 @@ func TestStageAndPasteMoveClearsClipboard(t *testing.T) {
 	m = press(t, m, "p") // paste into sub
 
 	waitFor(t, func() bool {
+		m.DrainEvents()
 		_, err := os.Stat(src)
 
 		return os.IsNotExist(err)
 	})
 	waitFor(t, func() bool {
+		m.DrainEvents()
 		_, err := os.Stat(filepath.Join(sub, "gone.txt"))
 
 		return err == nil
@@ -332,6 +334,7 @@ func TestTrashRequiresConfirmationAndRuns(t *testing.T) {
 
 	_ = press(t, m, "y")
 	waitFor(t, func() bool {
+		m.DrainEvents()
 		_, err := os.Stat(victim)
 
 		return os.IsNotExist(err)

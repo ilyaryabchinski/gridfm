@@ -310,8 +310,11 @@ func renderStateLine(l ui.Layout, message string) string {
 // one row from the grid area while a job runs.
 func (m *Model) renderShelf(l ui.Layout) string {
 	p := m.opProgress
-	line := fmt.Sprintf(" %s %d/%d %s  (c cancels)",
-		p.kind, p.done, p.total, ui.SanitizeName(p.target))
+	line := fmt.Sprintf(" %s %d/%d %s", p.kind, p.done, p.total, ui.SanitizeName(p.target))
+	if p.bytesTotal > 0 {
+		line += fmt.Sprintf(" · %s/%s", ui.FormatBytes(p.bytes), ui.FormatBytes(p.bytesTotal))
+	}
+	line += "  (c cancels)"
 
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color("6")).

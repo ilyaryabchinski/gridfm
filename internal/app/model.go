@@ -84,6 +84,10 @@ type opProgress struct {
 	done   int
 	total  int
 	target string
+	// bytes and bytesTotal describe the running item's copy progress; both
+	// are zero when the item has no measurable size.
+	bytes      int64
+	bytesTotal int64
 }
 
 // Model is the top-level Bubble Tea model. It owns domain state (the
@@ -236,13 +240,11 @@ func (m *Model) ClipboardPaths() []string { return m.clipboardPath }
 // Busy reports whether an operation is queued or running.
 func (m *Model) Busy() bool { return m.ops.Busy() }
 
-// Progress returns the running operation's display state, if any.
-func (m *Model) Progress() (operations.Kind, int, int, bool) {
-	if m.opProgress == nil {
-		return 0, 0, 0, false
-	}
-
-	return m.opProgress.kind, m.opProgress.done, m.opProgress.total, true
+// EnqueueOperation submits a mutation directly, bypassing the interactive
+// flows. It exists for programmatic use and tests; the update loop's key
+// handlers are the normal route.
+func (m *Model) EnqueueOperation(op operations.Operation) error {
+	return m.ops.Enqueue(op)
 }
 
 // LastResult returns the most recent finished operation result, if any.
