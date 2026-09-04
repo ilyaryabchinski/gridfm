@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"gridfm/internal/browser"
+	"gridfm/internal/places"
 	"gridfm/internal/ui"
 
 	"github.com/charmbracelet/lipgloss"
@@ -83,11 +84,22 @@ func (m *Model) bodyHeight(l ui.Layout) int {
 	return l.ContentHeight
 }
 
+// sidebarItems composes every sidebar section into one flat list: places,
+// bookmarks, mounts, and recent locations.
 func (m *Model) sidebarItems() []ui.SidebarItem {
-	items := make([]ui.SidebarItem, len(m.places))
-	for i, p := range m.places {
-		items[i] = ui.SidebarItem{Label: p.Label, Path: p.Path}
+	section := func(src []places.Place, name string) []ui.SidebarItem {
+		items := make([]ui.SidebarItem, 0, len(src))
+		for _, p := range src {
+			items = append(items, ui.SidebarItem{Label: p.Label, Path: p.Path, Section: name})
+		}
+
+		return items
 	}
+
+	items := section(m.places, "places")
+	items = append(items, section(m.bookmarks, "bookmarks")...)
+	items = append(items, section(m.mounts, "mounts")...)
+	items = append(items, section(m.recents, "recents")...)
 
 	return items
 }

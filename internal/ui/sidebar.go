@@ -6,33 +6,44 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// SidebarItem is one entry in the places sidebar.
+// SidebarItem is one entry in the sidebar. Section names the group the
+// entry belongs to ("places", "bookmarks", "mounts", "recents"); the panel
+// renders a header whenever the section changes.
 type SidebarItem struct {
-	Label string
-	Path  string
+	Label   string
+	Path    string
+	Section string
 }
 
 // RenderSidebar draws the places panel at the given width. selected is the
-// highlighted index; focused adds the active marker and bright styling used
-// when the sidebar owns keyboard focus. operations renders the non-blocking
-// operation shelf beneath the places: one line for a running job plus the
-// most recent finished summaries, already summarized by the caller.
+// highlighted index into the flat item list; focused adds the active marker
+// and bright styling used when the sidebar owns keyboard focus. operations
+// renders the non-blocking operation shelf beneath the sections: one line
+// for a running job plus the most recent finished summaries, already
+// summarized by the caller.
 func RenderSidebar(width, height int, items []SidebarItem, selected int, focused bool, operations []string) string {
 	if width < 1 {
 		width = 1
 	}
 
-	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")).
-		Render(" places")
-
+	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
 	lines := make([]string, 0, 4+len(items)+len(operations))
-	lines = append(lines, title, "")
 	rowStyle := lipgloss.NewStyle().Faint(true)
 	if focused {
 		rowStyle = lipgloss.NewStyle()
 	}
 
+	section := ""
 	for i, item := range items {
+		name := item.Section
+		if name == "" {
+			name = "places" // unsectioned items keep the original header
+		}
+		if name != section {
+			section = name
+			lines = append(lines, "", sectionStyle.Render(" "+section))
+		}
+
 		marker := "  "
 		if focused && i == selected {
 			marker = "> "
@@ -43,12 +54,14 @@ func RenderSidebar(width, height int, items []SidebarItem, selected int, focused
 	}
 
 	if len(operations) > 0 {
-		lines = append(lines, "",
-			lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")).
-				Render(" operations"))
+		lines = append(lines, "", sectionStyle.Render(" operations"))
 		for _, op := range operations {
 			lines = append(lines, "  "+rowStyle.Render(TruncateName(SanitizeName(op), width-3)))
 		}
+	}
+
+	if len(lines) == 0 {
+		lines = append(lines, sectionStyle.Render(" places"))
 	}
 
 	body := lipgloss.JoinVertical(lipgloss.Left, lines...)

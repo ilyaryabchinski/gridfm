@@ -68,11 +68,36 @@ func desktopOpenCmd(openID uint64, path string) tea.Cmd {
 	}
 }
 
-// loadPlacesCmd discovers sidebar places. It touches only the user's home
-// area and standard folder names.
+// loadPlacesCmd discovers sidebar places. It reads the user's home area,
+// standard folder names, mounted volumes, and the persisted bookmark and
+// recent libraries.
 func loadPlacesCmd() tea.Cmd {
 	return func() tea.Msg {
-		return PlacesLoadedMsg{Places: places.List(), Home: places.Home()}
+		return PlacesLoadedMsg{
+			Places:    places.List(),
+			Bookmarks: places.LoadBookmarks(),
+			Mounts:    places.Mounts(),
+			Recents:   places.LoadRecents(),
+			Home:      places.Home(),
+		}
+	}
+}
+
+// saveLibraryCmd persists one library file off the update loop and reports
+// the outcome, since a lost bookmark write should not vanish silently.
+func saveLibraryCmd(name string, paths []string) tea.Cmd {
+	return func() tea.Msg {
+		var err error
+		switch name {
+		case places.BookmarksName:
+			err = places.SaveBookmarks(paths)
+		case places.RecentsName:
+			err = places.SaveRecents(paths)
+		default:
+			err = fmt.Errorf("unknown library %q", name)
+		}
+
+		return LibrarySavedMsg{Name: name, Err: err}
 	}
 }
 

@@ -2,6 +2,7 @@ package app
 
 import (
 	"strconv"
+	"strings"
 
 	"gridfm/internal/browser"
 	"gridfm/internal/operations"
@@ -99,6 +100,11 @@ type opProgress struct {
 type Model struct {
 	browser browser.Browser
 	places  []places.Place
+
+	// Sidebar library sections beyond the standard places.
+	bookmarks []places.Place
+	mounts    []places.Place
+	recents   []places.Place
 
 	icons     ui.IconMode
 	zoom      ui.ZoomLevel
@@ -228,13 +234,16 @@ func (m *Model) Region() Region { return m.region }
 // PlaceCount returns the number of discovered sidebar places.
 func (m *Model) PlaceCount() int { return len(m.places) }
 
-// SelectedPlace returns the sidebar place under the cursor.
+// SelectedPlace returns the sidebar entry under the cursor.
 func (m *Model) SelectedPlace() (places.Place, bool) {
-	if m.placeIdx < 0 || m.placeIdx >= len(m.places) {
+	items := m.sidebarItems()
+	if m.placeIdx < 0 || m.placeIdx >= len(items) {
 		return places.Place{}, false
 	}
 
-	return m.places[m.placeIdx], true
+	item := items[m.placeIdx]
+
+	return places.Place{Label: item.Label, Path: item.Path}, true
 }
 
 // Mode returns the active browsing mode.
@@ -269,6 +278,12 @@ func (m *Model) Inspector() *preview.Info { return m.inspector }
 
 // InspectorRequestID returns the current inspector request identity.
 func (m *Model) InspectorRequestID() uint64 { return m.inspectorReq }
+
+// Bookmarks returns the bookmarked directories.
+func (m *Model) Bookmarks() []places.Place { return m.bookmarks }
+
+// Recents returns the recently visited directories, newest first.
+func (m *Model) Recents() []places.Place { return m.recents }
 
 // LastResult returns the most recent finished operation result, if any.
 func (m *Model) LastResult() *operations.Result { return m.lastResult }
@@ -307,6 +322,95 @@ func (m *Model) operationLines() []string {
 	}
 
 	return lines
+}
+
+// recentsDepth bounds the remembered recent locations.
+const recentsDepth = 8
+
+// rememberRecent records a successfully loaded directory at the front of
+// the recents list, deduplicated, and reports the save command.
+func (m *Model) rememberRecent(path string) tea.Cmd {
+	updated := make([]places.Place, 0, recentsDepth)
+	updated = append(updated, places.Place{Label: recentLabel(path), Path: path})
+	for _, p := range m.recents {
+		if p.Path == path || len(updated) >= recentsDepth {
+			continue
+		}
+		updated = append(updated, p)
+	}
+	m.recents = updated
+
+	return saveLibraryCmd(places.RecentsName, placePaths(m.recents))
+}
+
+// recentLabel names a recent entry by its final path component.
+func recentLabel(path string) string {
+	trimmed := strings.TrimRight(path, "/")
+	if i := strings.LastIndex(trimmed, "/"); i >= 0 && i < len(trimmed)-1 {
+		return trimmed[i+1:]
+	}
+
+	return path
+}
+
+// placePaths extracts the paths for persistence.
+func placePaths(src []places.Place) []string {
+	out := make([]string, 0, len(src))
+	for _, p := range src {
+		out = append(out, p.Path)
+	}
+
+	return out
+}
+
+// addBookmark bookmarks the browsed directory. Re-bookmarking an existing
+// entry is a no-op that keeps the current position.
+func (m *Model) addBookmark() (tea.Model, tea.Cmd) {
+	path := m.browser.Path
+	for _, p := range m.bookmarks {
+		if p.Path == path {
+			m.note = "already bookmarked"
+
+			return m, nil
+		}
+	}
+
+	m.bookmarks = append(m.bookmarks, places.Place{Label: recentLabel(path), Path: path})
+	m.note = "bookmarked " + recentLabel(path)
+
+	return m, saveLibraryCmd(places.BookmarksName, placePaths(m.bookmarks))
+}
+
+// removeBookmark drops the browsed directory from the bookmarks. The cursor
+// steps back when the removed entry sat before it so the highlight stays on
+// the same entry.
+func (m *Model) removeBookmark() (tea.Model, tea.Cmd) {
+	path := m.browser.Path
+	for i, p := range m.bookmarks {
+		if p.Path != path {
+			continue
+		}
+
+		removedIdx := len(m.sidebarItems())
+		for idx, item := range m.sidebarItems() {
+			if item.Section == "bookmarks" && item.Path == path {
+				removedIdx = idx
+
+				break
+			}
+		}
+		m.bookmarks = append(m.bookmarks[:i], m.bookmarks[i+1:]...)
+		if m.placeIdx >= removedIdx && m.placeIdx > 0 {
+			m.placeIdx--
+		}
+		m.note = "bookmark removed"
+
+		return m, saveLibraryCmd(places.BookmarksName, placePaths(m.bookmarks))
+	}
+
+	m.note = "not bookmarked"
+
+	return m, nil
 }
 
 // listenOperations subscribes to the operation event stream. Update re-arms

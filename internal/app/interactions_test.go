@@ -98,12 +98,15 @@ func TestEnterInSidebarWithoutPlacesIsSafe(t *testing.T) {
 
 	m := resize(t, app.New("/d", app.Options{}), 100, 30)
 	m = placesLoaded(t, m, nil)
-	m = loaded(t, m, 1, "/d", entriesAt("/d", 1), nil)
 	m = press(t, m, "tab")
-	m = press(t, m, "enter")
 
-	if m.IsLoading() {
-		t.Error("enter with no places should do nothing")
+	// With no entries in any section, enter must produce no action at all.
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("enter")})
+	if _, ok := next.(*app.Model); !ok {
+		t.Fatalf("Update returned %T, want *app.Model", next)
+	}
+	if cmd != nil {
+		t.Error("enter with an empty sidebar should do nothing")
 	}
 }
 

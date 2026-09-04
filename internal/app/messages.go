@@ -30,11 +30,22 @@ type EntryResolvedMsg struct {
 	RequestID uint64
 }
 
-// PlacesLoadedMsg carries the discovered sidebar places and the home path
-// used for breadcrumb abbreviation.
+// PlacesLoadedMsg carries the discovered sidebar sources and the home path
+// used for breadcrumb abbreviation: standard places plus the persisted
+// bookmarks, mounted volumes, and recent locations.
 type PlacesLoadedMsg struct {
-	Places []places.Place
-	Home   string
+	Places    []places.Place
+	Bookmarks []places.Place
+	Mounts    []places.Place
+	Recents   []places.Place
+	Home      string
+}
+
+// LibrarySavedMsg reports the outcome of persisting bookmarks or recents.
+// Name is the library file involved; a nil Err means the save succeeded.
+type LibrarySavedMsg struct {
+	Name string
+	Err  error
 }
 
 // OpenFinishedMsg reports the completion of an externally opened file:

@@ -51,15 +51,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case DirectoryLoadedMsg:
-		m.applyDirectoryLoaded(msg)
+		save := m.applyDirectoryLoaded(msg)
 
 		// The refreshed listing may have moved focus to a different entry;
 		// the inspector follows it when open.
 		if m.inspectorOn {
-			return m, m.followInspector()
+			return m, tea.Batch(save, m.followInspector())
 		}
 
-		return m, nil
+		return m, save
 
 	case InspectorLoadedMsg:
 		return m.applyInspectorLoaded(msg)
@@ -69,8 +69,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case PlacesLoadedMsg:
 		m.places = msg.Places
+		m.bookmarks = msg.Bookmarks
+		m.mounts = msg.Mounts
+		m.recents = msg.Recents
 		m.home = msg.Home
 		m.placeIdx = 0
+
+		return m, nil
+
+	case LibrarySavedMsg:
+		if msg.Err != nil {
+			m.note = "save " + msg.Name + ": " + msg.Err.Error()
+		}
 
 		return m, nil
 
@@ -160,9 +170,11 @@ func itoaPlural(n int, word string) string {
 	return plain + "s"
 }
 
-func (m *Model) applyDirectoryLoaded(msg DirectoryLoadedMsg) {
+// applyDirectoryLoaded applies a directory load and reports the command
+// persisting the new recent location, nil for failed loads.
+func (m *Model) applyDirectoryLoaded(msg DirectoryLoadedMsg) tea.Cmd {
 	if msg.RequestID != m.requestID {
-		return // stale result from a superseded request
+		return nil // stale result from a superseded request
 	}
 
 	m.loading = false
@@ -176,7 +188,7 @@ func (m *Model) applyDirectoryLoaded(msg DirectoryLoadedMsg) {
 		// note so failed navigation is never silent.
 		m.note = "error: " + msg.Err.Error()
 
-		return
+		return nil
 	}
 
 	// Recovering from a failed load: its error note must not outlive the
@@ -190,6 +202,8 @@ func (m *Model) applyDirectoryLoaded(msg DirectoryLoadedMsg) {
 	m.browser.SetEntries(msg.Path, msg.Entries)
 	m.syncGridColumns()
 	m.clampScroll()
+
+	return m.rememberRecent(msg.Path)
 }
 
 // applyEntryResolved completes an open attempt whose target turned out to
@@ -364,6 +378,8 @@ var normalKeyHandlers = map[string]func(*Model) (tea.Model, tea.Cmd){
 	},
 	"y": func(m *Model) (tea.Model, tea.Cmd) { return m.stageClipboard(ClipboardCopy) },
 	"x": func(m *Model) (tea.Model, tea.Cmd) { return m.stageClipboard(ClipboardMove) },
+	"b": (*Model).addBookmark,
+	"B": (*Model).removeBookmark,
 	"p": (*Model).pasteClipboard,
 	"n": (*Model).openCreateInput,
 	"R": (*Model).openRenameInput,
@@ -608,17 +624,17 @@ func (m *Model) handleMovement(key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// movePlaceCursor moves the sidebar selection.
+// movePlaceCursor moves the sidebar selection across every section.
 func (m *Model) movePlaceCursor(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case keyUp, "k":
 		m.placeIdx = max(m.placeIdx-1, 0)
 	case keyDown, "j":
-		m.placeIdx = min(m.placeIdx+1, len(m.places)-1)
+		m.placeIdx = min(m.placeIdx+1, len(m.sidebarItems())-1)
 	case keyHome:
 		m.placeIdx = 0
 	case keyEnd:
-		m.placeIdx = max(len(m.places)-1, 0)
+		m.placeIdx = max(len(m.sidebarItems())-1, 0)
 	}
 
 	return m, nil
