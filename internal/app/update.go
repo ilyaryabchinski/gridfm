@@ -37,6 +37,7 @@ var (
 	keyEsc       = "esc"
 	keyTab       = "tab"
 	keyBackspace = "backspace"
+	keyHelp      = "?"
 )
 
 // Update routes messages to handlers. It never performs filesystem I/O.
@@ -129,6 +130,7 @@ func (m *Model) applyOperationEvent(ev operations.Event) (tea.Model, tea.Cmd) {
 		m.input = inputNone
 		m.confirm = confirmNone
 		m.showResults = false
+		m.helpOpen = false
 		m.question = &pendingQuestion{answerCh: e.AnswerCh, target: e.Target}
 
 	case operations.FinishedEvent:
@@ -137,11 +139,12 @@ func (m *Model) applyOperationEvent(ev operations.Event) (tea.Model, tea.Cmd) {
 		m.applyAll = false
 		// Only one blocking overlay may be armed: the results overlay
 		// claims the keyboard, so any open input, confirmation, sort menu,
-		// or filter closes with the finished job.
+		// filter, or help legend closes with the finished job.
 		m.input = inputNone
 		m.confirm = confirmNone
 		m.sortOpen = false
 		m.filterInput = false
+		m.helpOpen = false
 		result := e.Result
 		m.lastResult = &result
 		m.rememberJob(result)
@@ -387,7 +390,7 @@ func (m *Model) handleKey(key string) (tea.Model, tea.Cmd) {
 // hidden grid shortcuts never fire while it is up.
 func (m *Model) handleHelpKeys(key string) (tea.Model, tea.Cmd) {
 	switch key {
-	case keyEsc, "?", "q":
+	case keyEsc, keyHelp, "q":
 		m.helpOpen = false
 	}
 
@@ -575,7 +578,7 @@ func (m *Model) handleDisplayKeys(key string) (tea.Model, tea.Cmd) {
 		// Manual refresh: the fallback when watching is unavailable and
 		// the escape hatch from stale listings in general.
 		return m, loadDirectoryCmd(m.startRequest(), m.browser.Path)
-	case "?":
+	case keyHelp:
 		m.helpOpen = true
 
 		return m, nil
