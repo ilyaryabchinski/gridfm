@@ -54,12 +54,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		save := m.applyDirectoryLoaded(msg)
 
 		// The refreshed listing may have moved focus to a different entry;
-		// the inspector follows it when open.
+		// the inspector follows it when open. The watcher moves to the
+		// loaded directory off the update loop.
+		cmds := tea.Batch(save, watchDirCmd(m.watch, msg.Path))
 		if m.inspectorOn {
-			return m, tea.Batch(save, m.followInspector())
+			return m, tea.Batch(cmds, m.followInspector())
 		}
 
-		return m, save
+		return m, cmds
+
+	case DirChangedMsg:
+		return m.applyDirChanged(msg)
+
+	case WatchReadyMsg:
+		if msg.Err != nil && !m.watchFailed {
+			m.watchFailed = true
+			m.note = "watch unavailable; r refreshes"
+		}
+
+		return m, nil
 
 	case InspectorLoadedMsg:
 		return m.applyInspectorLoaded(msg)
@@ -298,6 +311,31 @@ func (m *Model) applyInspectorLoaded(msg InspectorLoadedMsg) (tea.Model, tea.Cmd
 	return m, nil
 }
 
+// applyDirChanged consumes one debounced watch notification: a change to
+// the browsed directory refreshes it, anything else is stale, and a
+// failure degrades to manual refresh with a single note.
+func (m *Model) applyDirChanged(msg DirChangedMsg) (tea.Model, tea.Cmd) {
+	if msg.Err != nil {
+		if !m.watchFailed {
+			m.watchFailed = true
+			m.note = "watch unavailable; r refreshes"
+		}
+
+		return m, listenWatch(m.watch)
+	}
+
+	// Changes outside the browsed directory, or notifications arriving
+	// while a load is already in flight, need no action.
+	if msg.Path != m.browser.Path || m.loading {
+		return m, listenWatch(m.watch)
+	}
+
+	return m, tea.Batch(
+		loadDirectoryCmd(m.startRequest(), m.browser.Path),
+		listenWatch(m.watch),
+	)
+}
+
 // handleKey applies Milestone 1 keybindings, routed by the active surface:
 // the sort menu overlay, the filter input, the results overlay, or normal
 // browsing.
@@ -497,6 +535,10 @@ func (m *Model) handleDisplayKeys(key string) (tea.Model, tea.Cmd) {
 		}
 
 		return m, m.requestInspector()
+	case "r":
+		// Manual refresh: the fallback when watching is unavailable and
+		// the escape hatch from stale listings in general.
+		return m, loadDirectoryCmd(m.startRequest(), m.browser.Path)
 	}
 
 	return m.handleEntryKeys(key)

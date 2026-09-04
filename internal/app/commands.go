@@ -9,6 +9,7 @@ import (
 	"gridfm/internal/browser"
 	"gridfm/internal/places"
 	"gridfm/internal/preview"
+	"gridfm/internal/watcher"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -108,5 +109,35 @@ func inspectCmd(requestID uint64, path string) tea.Cmd {
 		info, err := preview.Inspect(path)
 
 		return InspectorLoadedMsg{RequestID: requestID, Path: path, Info: info, Err: err}
+	}
+}
+
+// watchDirCmd points the watcher at a directory off the update loop.
+func watchDirCmd(w *watcher.Watcher, path string) tea.Cmd {
+	if w == nil {
+		return nil
+	}
+
+	return func() tea.Msg {
+		err := w.Watch(path)
+
+		return WatchReadyMsg{Path: path, Err: err}
+	}
+}
+
+// listenWatch subscribes to the watcher's event stream. Update re-arms it
+// after every event so exactly one listener blocks at a time.
+func listenWatch(w *watcher.Watcher) tea.Cmd {
+	if w == nil {
+		return nil
+	}
+
+	return func() tea.Msg {
+		ev, ok := <-w.Events()
+		if !ok {
+			return nil
+		}
+
+		return DirChangedMsg{Path: ev.Path, Err: ev.Err}
 	}
 }

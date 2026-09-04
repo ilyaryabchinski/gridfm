@@ -9,6 +9,7 @@ import (
 	"gridfm/internal/places"
 	"gridfm/internal/preview"
 	"gridfm/internal/ui"
+	"gridfm/internal/watcher"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -158,6 +159,12 @@ type Model struct {
 	inspector     *preview.Info
 	inspectorErr  error
 
+	// Filesystem watching. A nil watcher means watching is unavailable and
+	// the app degrades to manual refresh; watchFailed limits the failure
+	// note to one appearance.
+	watch       *watcher.Watcher
+	watchFailed bool
+
 	width     int
 	height    int
 	requestID uint64
@@ -172,6 +179,10 @@ type Model struct {
 // load completes. All Model methods use pointer receivers so state changes
 // can never be lost to a value copy.
 func New(startPath string, opts Options) *Model {
+	// Watching is an enhancement: without an inotify instance the app runs
+	// with manual refresh only.
+	w, _ := watcher.New()
+
 	return &Model{
 		browser:   browser.New(startPath),
 		icons:     opts.Icons,
@@ -180,6 +191,7 @@ func New(startPath string, opts Options) *Model {
 		requestID: 1,
 		loading:   true,
 		ops:       operations.NewManager(),
+		watch:     w,
 	}
 }
 
@@ -189,6 +201,7 @@ func (m *Model) Init() tea.Cmd {
 		loadDirectoryCmd(m.requestID, m.browser.Path),
 		loadPlacesCmd(),
 		listenOperations(m.ops),
+		listenWatch(m.watch),
 	)
 }
 
@@ -284,6 +297,29 @@ func (m *Model) Bookmarks() []places.Place { return m.bookmarks }
 
 // Recents returns the recently visited directories, newest first.
 func (m *Model) Recents() []places.Place { return m.recents }
+
+// WatchPath returns the currently watched directory, empty when watching
+// is unavailable or inactive.
+func (m *Model) WatchPath() string {
+	if m.watch == nil {
+		return ""
+	}
+
+	return m.watch.Path()
+}
+
+// WatchDirectory points the watcher at a directory and returns the
+// readiness command. Production flows reach it through Update; it is
+// exported for tests and programmatic use.
+func (m *Model) WatchDirectory(path string) tea.Cmd {
+	return watchDirCmd(m.watch, path)
+}
+
+// ListenWatch returns the watch event listener command, nil when watching
+// is unavailable.
+func (m *Model) ListenWatch() tea.Cmd {
+	return listenWatch(m.watch)
+}
 
 // LastResult returns the most recent finished operation result, if any.
 func (m *Model) LastResult() *operations.Result { return m.lastResult }

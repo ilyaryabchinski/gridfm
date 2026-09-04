@@ -75,3 +75,19 @@ type InspectorLoadedMsg struct {
 	Info      *preview.Info
 	Err       error
 }
+
+// DirChangedMsg is one debounced filesystem change notification for the
+// browsed directory. It is a hint to refresh, never a statement about what
+// changed. A nil Err carries the change; an Err reports the watcher's
+// degradation.
+type DirChangedMsg struct {
+	Path string
+	Err  error
+}
+
+// WatchReadyMsg reports the outcome of pointing the watcher at a directory.
+// A nil Err means the directory is now watched.
+type WatchReadyMsg struct {
+	Path string
+	Err  error
+}
