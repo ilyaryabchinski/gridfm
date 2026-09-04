@@ -15,8 +15,8 @@ type Manager struct {
 	queue  chan *job
 	active atomic.Pointer[job]
 
-	// busy tracks jobs from enqueue until finish.
-	busy chan struct{}
+	// inFlight counts jobs from enqueue until finish.
+	inFlight atomic.Int64
 }
 
 // Event is one manager publication: progress, a conflict question, or a
@@ -75,14 +75,20 @@ type Operation struct {
 	Items []Item
 }
 
+// queueCapacity bounds the pending job backlog. It is generous for
+// interactive use; overflow is reported to the caller instead of stalling
+// the enqueueing goroutine.
+const queueCapacity = 64
+
 // NewManager starts the serial job worker.
 func NewManager() *Manager {
 	// The event stream is unbuffered: progress events synchronize the
 	// worker with the consumer, which makes cancellation deterministic.
+	// The queue is bounded and sent to synchronously, so the worker
+	// receives jobs exactly in enqueue order.
 	m := &Manager{
 		events: make(chan Event),
-		queue:  make(chan *job),
-		busy:   make(chan struct{}, 1024),
+		queue:  make(chan *job, queueCapacity),
 	}
 
 	go m.worker()
@@ -93,32 +99,48 @@ func NewManager() *Manager {
 // Events exposes the event stream for the application to consume.
 func (m *Manager) Events() <-chan Event { return m.events }
 
-// Enqueue adds a job to the serial queue after validating it. Destinations
-// inside their own source tree are rejected before anything runs.
+// Enqueue adds a job to the serial queue after validating it. Copy, move,
+// and rename destinations inside their own source tree are rejected before
+// anything runs.
 func (m *Manager) Enqueue(op Operation) error {
-	validateErr := ValidateDestinations(op.Items)
-	if validateErr != nil {
-		return validateErr
+	if err := validateOperation(op); err != nil {
+		return err
 	}
+
+	// The counter rises before the job becomes visible to the worker so
+	// Busy can never miss a job, and falls back if the queue is full.
+	m.inFlight.Add(1)
+	select {
+	case m.queue <- &job{op: op}:
+		return nil
+	default:
+		m.inFlight.Add(-1)
+
+		return ErrQueueFull
+	}
+}
+
+// validateOperation enforces the per-kind contracts every job must satisfy.
+func validateOperation(op Operation) error {
 	if len(op.Items) == 0 {
 		return fmt.Errorf("%w: %q", ErrEmptyOperation, op.ID)
 	}
 
-	select {
-	case m.busy <- struct{}{}:
-	default:
+	switch op.Kind {
+	case OpCopy, OpMove, OpRename:
+		// Only these kinds carry a meaningful source-target pair. Create,
+		// trash, and delete items leave one side empty, and an empty path
+		// resolves to the process working directory, which would reject
+		// every operation at or beneath the launch location.
+		return ValidateDestinations(op.Items)
 	}
-
-	go func() {
-		m.queue <- &job{op: op}
-	}()
 
 	return nil
 }
 
 // Busy reports whether any job is queued or running.
 func (m *Manager) Busy() bool {
-	return len(m.busy) > 0
+	return m.inFlight.Load() > 0
 }
 
 // CancelActive cancels the running job, if any. Queued jobs are not

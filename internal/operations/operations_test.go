@@ -251,6 +251,101 @@ func TestConflictReplaceOverwrites(t *testing.T) {
 	}
 }
 
+func TestCopyReplaceUnlinksDestinationSymlink(t *testing.T) {
+	t.Parallel()
+
+	srcDir := t.TempDir()
+	dstDir := t.TempDir()
+	mustWrite(t, filepath.Join(srcDir, "a.txt"), "new")
+
+	// The destination symlink points at an unrelated file; replacing it
+	// must rewrite the link itself, never the file it points at.
+	innocent := filepath.Join(dstDir, "innocent.txt")
+	mustWrite(t, innocent, "keep me")
+	dst := filepath.Join(dstDir, "a.txt")
+	symlinkErr := os.Symlink(innocent, dst)
+	if symlinkErr != nil {
+		t.Fatal(symlinkErr)
+	}
+
+	mgr := operations.NewManager()
+	enqueueErr := mgr.Enqueue(operations.Operation{
+		ID:    "copy-replace-link",
+		Kind:  operations.OpCopy,
+		Items: []operations.Item{{Source: filepath.Join(srcDir, "a.txt"), Target: dst}},
+	})
+	if enqueueErr != nil {
+		t.Fatal(enqueueErr)
+	}
+
+	for {
+		ev := <-mgr.Events()
+		if q, ok := ev.(operations.QuestionEvent); ok {
+			q.AnswerCh <- operations.Answer{Action: operations.ConflictReplace}
+
+			continue
+		}
+		if fin, ok := ev.(operations.FinishedEvent); ok {
+			if fin.Result.Succeeded != 1 {
+				t.Fatalf("result = %+v, want 1 succeeded", fin.Result)
+			}
+
+			break
+		}
+	}
+
+	if got := mustRead(t, innocent); got != "keep me" {
+		t.Errorf("symlink target clobbered: %q", got)
+	}
+	info, statErr := os.Lstat(dst)
+	if statErr != nil {
+		t.Fatal(statErr)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Error("replaced entry should be a regular file, not the old symlink")
+	}
+	if got := mustRead(t, dst); got != "new" {
+		t.Errorf("replacement content = %q, want new", got)
+	}
+}
+
+func TestCopyOntoHardLinkOfSourceIsRejected(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	src := filepath.Join(dir, "a.txt")
+	mustWrite(t, src, "precious")
+
+	// dst is a hard link to src: copying onto it used to truncate the
+	// shared inode before the source was read, emptying both names.
+	dst := filepath.Join(dir, "b.txt")
+	linkErr := os.Link(src, dst)
+	if linkErr != nil {
+		t.Fatal(linkErr)
+	}
+
+	mgr := operations.NewManager()
+	enqueueErr := mgr.Enqueue(operations.Operation{
+		ID:    "copy-same",
+		Kind:  operations.OpCopy,
+		Items: []operations.Item{{Source: src, Target: dst}},
+	})
+	if enqueueErr != nil {
+		t.Fatal(enqueueErr)
+	}
+
+	result := syncMgr(t, mgr, "copy-same")
+	if result.Failed != 1 {
+		t.Fatalf("result = %+v, want 1 failed", result)
+	}
+	if got := mustRead(t, src); got != "precious" {
+		t.Errorf("source content destroyed: %q", got)
+	}
+	if got := mustRead(t, dst); got != "precious" {
+		t.Errorf("hard link content destroyed: %q", got)
+	}
+}
+
 func TestConflictRenameWritesUniqueName(t *testing.T) {
 	t.Parallel()
 

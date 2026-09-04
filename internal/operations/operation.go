@@ -103,5 +103,13 @@ var ErrDestinationInsideSource = errors.New("destination is inside source")
 // ErrEmptyOperation rejects a job without items.
 var ErrEmptyOperation = errors.New("operation has no items")
 
+// ErrQueueFull rejects a job when the bounded queue already holds its
+// capacity of pending jobs.
+var ErrQueueFull = errors.New("operation queue is full")
+
 // ErrUnknownKind rejects an unrecognized operation kind.
 var ErrUnknownKind = errors.New("unknown operation kind")
+
+// ErrSameFile rejects a copy whose source and destination are the same
+// file: writing onto it would destroy the content being copied.
+var ErrSameFile = errors.New("source and destination are the same file")

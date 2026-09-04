@@ -13,9 +13,11 @@ import (
 // trashItem moves src into the freedesktop.org home trash: the entry lands
 // in Trash/files under a non-colliding name and a matching .trashinfo
 // record in Trash/info records the original path and deletion time. The
-// trash never overwrites anything. Cross-filesystem sources fall back to
-// copy-then-remove, and the source is only removed after the copy fully
-// succeeds.
+// record is created exclusively before the entry moves, and rolled back if
+// the move fails, so the source never disappears without a valid trash
+// entry beside it. The trash never overwrites anything. Cross-filesystem
+// sources fall back to copy-then-remove, and the source is only removed
+// after the copy fully succeeds.
 func trashItem(ctx context.Context, src string, resolve conflictResolver) error {
 	root, err := trashRoot()
 	if err != nil {
@@ -32,8 +34,27 @@ func trashItem(ctx context.Context, src string, resolve conflictResolver) error 
 	}
 
 	dst := UniqueName(filepath.Join(filesDir, filepath.Base(src)))
+	infoPath := filepath.Join(infoDir, filepath.Base(dst)+".trashinfo")
 
-	err = renameFn(src, dst)
+	if writeErr := writeTrashInfo(infoPath, src); writeErr != nil {
+		return writeErr
+	}
+
+	if moveErr := moveIntoTrash(ctx, src, dst, resolve); moveErr != nil {
+		// The source was not (fully) moved; the reserved record must not
+		// survive on its own.
+		_ = os.Remove(infoPath)
+
+		return moveErr
+	}
+
+	return nil
+}
+
+// moveIntoTrash relocates the source into its reserved trash slot: rename
+// on the same filesystem, copy-then-remove across filesystems.
+func moveIntoTrash(ctx context.Context, src, dst string, resolve conflictResolver) error {
+	err := renameFn(src, dst)
 	if errors.Is(err, errCrossDevice) {
 		copyErr := copyEntry(ctx, src, dst, resolve)
 		if copyErr != nil {
@@ -44,11 +65,14 @@ func trashItem(ctx context.Context, src string, resolve conflictResolver) error 
 		if rmErr != nil {
 			return fmt.Errorf("remove trashed source %q: %w", src, rmErr)
 		}
-	} else if err != nil {
+
+		return nil
+	}
+	if err != nil {
 		return fmt.Errorf("trash %q: %w", src, err)
 	}
 
-	return writeTrashInfo(infoDir, filepath.Base(dst), src)
+	return nil
 }
 
 // trashRoot resolves the home trash location per the basedir
@@ -66,9 +90,11 @@ func trashRoot() (string, error) {
 	return filepath.Join(home, ".local", "share", "Trash"), nil
 }
 
-// writeTrashInfo records the original location and deletion time beside the
-// trashed entry, as the specification requires for a valid entry.
-func writeTrashInfo(infoDir, name, origPath string) error {
+// writeTrashInfo records the original location and deletion time beside
+// the trashed entry, as the specification requires for a valid entry. The
+// record is created exclusively: an existing name, whether reserved by
+// another trasher or left stale, is never overwritten.
+func writeTrashInfo(infoPath, origPath string) error {
 	abs, err := filepath.Abs(origPath)
 	if err != nil {
 		return fmt.Errorf("resolve %q: %w", origPath, err)
@@ -80,10 +106,21 @@ func writeTrashInfo(infoDir, name, origPath string) error {
 		time.Now().Format("2006-01-02T15:04:05"),
 	)
 
-	infoPath := filepath.Join(infoDir, name+".trashinfo")
-	writeErr := os.WriteFile(infoPath, []byte(content), 0o600)
-	if writeErr != nil {
-		return fmt.Errorf("write %q: %w", infoPath, writeErr)
+	//nolint:gosec // 0600 is the specification's required record mode
+	file, err := os.OpenFile(infoPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("write %q: %w", infoPath, err)
+	}
+	_, writeErr := file.WriteString(content)
+	closeErr := file.Close()
+	if writeErr != nil || closeErr != nil {
+		// A partial record is worse than none.
+		_ = os.Remove(infoPath)
+		if writeErr != nil {
+			return fmt.Errorf("write %q: %w", infoPath, writeErr)
+		}
+
+		return fmt.Errorf("close %q: %w", infoPath, closeErr)
 	}
 
 	return nil

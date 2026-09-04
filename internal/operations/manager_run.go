@@ -17,7 +17,7 @@ func (m *Manager) runJob(j *job) {
 	defer func() {
 		cancel()
 		m.active.Store(nil)
-		<-m.busy
+		m.inFlight.Add(-1)
 	}()
 
 	coordinator := &conflictCoordinator{publish: m.publish}

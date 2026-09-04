@@ -26,6 +26,12 @@ func copyEntry(ctx context.Context, src, dst string, resolve conflictResolver) e
 		return fmt.Errorf("lstat %q: %w", src, err)
 	}
 
+	// Copying an entry onto itself (same path or a hard link to it) would
+	// truncate the content being read; refuse instead of destroying it.
+	if dstInfo, statErr := os.Lstat(dst); statErr == nil && os.SameFile(info, dstInfo) {
+		return fmt.Errorf("%w: %q and %q", ErrSameFile, src, dst)
+	}
+
 	action, err := ensureTarget(ctx, dst, resolve)
 	if err != nil {
 		return err
@@ -38,16 +44,31 @@ func copyEntry(ctx context.Context, src, dst string, resolve conflictResolver) e
 		return ErrAborted
 	case ConflictRename:
 		dst = UniqueName(dst)
-	case ConflictReplace:
 	}
 
 	switch {
 	case info.Mode()&fs.ModeSymlink != 0:
-		return copySymlink(src, dst)
+		// Resolve the link before the destination is disturbed: a failing
+		// readlink must never cost the existing entry.
+		target, linkErr := os.Readlink(src)
+		if linkErr != nil {
+			return fmt.Errorf("readlink %q: %w", src, linkErr)
+		}
+		if replaceErr := replaceRemove(action, dst, info); replaceErr != nil {
+			return replaceErr
+		}
+
+		return createSymlink(target, dst)
 	case info.IsDir():
+		if replaceErr := replaceRemove(action, dst, info); replaceErr != nil {
+			return replaceErr
+		}
+
 		return copyDir(ctx, src, dst, info, resolve)
 	default:
-		return copyFile(ctx, src, dst, info)
+		// The source is opened before any replacement removal: an
+		// unreadable or vanished source must not destroy the destination.
+		return copyFile(ctx, src, dst, info, action)
 	}
 }
 
@@ -71,13 +92,42 @@ func ensureTarget(ctx context.Context, dst string, resolve conflictResolver) (Co
 	return answer.Action, nil
 }
 
-func copySymlink(src, dst string) error {
-	target, err := os.Readlink(src)
-	if err != nil {
-		return fmt.Errorf("readlink %q: %w", src, err)
+// replaceRemove clears the way for an explicit replace by removing the
+// destination entry itself instead of letting the copy follow it: a
+// destination symlink is unlinked, never traversed into its target, and a
+// destination hard link to the source is broken before anything is opened.
+// A real destination directory survives: a source directory merges into it,
+// and replacing a directory with a plain file is refused. Callers invoke
+// it only after proving the replacement source is readable.
+func replaceRemove(action ConflictAction, dst string, srcInfo fs.FileInfo) error {
+	if action != ConflictReplace {
+		return nil
 	}
 
-	err = os.Symlink(target, dst)
+	dstInfo, err := os.Lstat(dst)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil // vanished after the conflict was resolved
+		}
+
+		return fmt.Errorf("stat %q: %w", dst, err)
+	}
+	if dstInfo.IsDir() {
+		if srcInfo.IsDir() {
+			return nil // directory replaces directory by merging
+		}
+
+		return fmt.Errorf("cannot replace directory %q with a file", dst)
+	}
+	if err := os.Remove(dst); err != nil {
+		return fmt.Errorf("remove %q: %w", dst, err)
+	}
+
+	return nil
+}
+
+func createSymlink(target, dst string) error {
+	err := os.Symlink(target, dst)
 	if err != nil {
 		return fmt.Errorf("symlink %q: %w", dst, err)
 	}
@@ -86,9 +136,18 @@ func copySymlink(src, dst string) error {
 }
 
 func copyDir(ctx context.Context, src, dst string, info fs.FileInfo, resolve conflictResolver) error {
-	err := os.Mkdir(dst, info.Mode().Perm())
-	if err != nil && !errors.Is(err, fs.ErrExist) {
-		return fmt.Errorf("mkdir %q: %w", dst, err)
+	// The destination is created owner-writable even when the source mode
+	// is read-only, so its children can be populated; the source mode is
+	// restored only after the contents are in place. An existing
+	// destination survives as a merge target and keeps its own mode.
+	created := true
+	err := os.Mkdir(dst, info.Mode().Perm()|0o200)
+	if err != nil {
+		if !errors.Is(err, fs.ErrExist) {
+			return fmt.Errorf("mkdir %q: %w", dst, err)
+		}
+
+		created = false
 	}
 
 	entries, err := os.ReadDir(src)
@@ -97,16 +156,20 @@ func copyDir(ctx context.Context, src, dst string, info fs.FileInfo, resolve con
 	}
 
 	for _, entry := range entries {
-		err100 := ctx.Err()
-		if err100 != nil {
-			return fmt.Errorf("copy %q interrupted: %w", src, err100)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("copy %q interrupted: %w", src, ctxErr)
 		}
 
 		childSrc := filepath.Join(src, entry.Name())
 		childDst := filepath.Join(dst, entry.Name())
-		copyErr := copyEntry(ctx, childSrc, childDst, resolve)
-		if copyErr != nil {
+		if copyErr := copyEntry(ctx, childSrc, childDst, resolve); copyErr != nil {
 			return copyErr
+		}
+	}
+
+	if created {
+		if chmodErr := os.Chmod(dst, info.Mode().Perm()); chmodErr != nil {
+			return fmt.Errorf("chmod %q: %w", dst, chmodErr)
 		}
 	}
 
@@ -114,13 +177,18 @@ func copyDir(ctx context.Context, src, dst string, info fs.FileInfo, resolve con
 	return preserveTimes(src, dst)
 }
 
-func copyFile(ctx context.Context, src, dst string, info fs.FileInfo) error {
+func copyFile(ctx context.Context, src, dst string, info fs.FileInfo, action ConflictAction) error {
 	//nolint:gosec // paths come from user-selected entries; this is a file manager
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return fmt.Errorf("open %q: %w", src, err)
 	}
 	defer srcFile.Close() //nolint:errcheck // read-only handle
+
+	// The source is open and readable; only now is the existing entry removed.
+	if replaceErr := replaceRemove(action, dst, info); replaceErr != nil {
+		return replaceErr
+	}
 
 	//nolint:gosec // the copied mode comes from the source entry
 	dstFile, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
@@ -182,9 +250,9 @@ func moveEntry(ctx context.Context, src, dst string, resolve conflictResolver) e
 		return copyErr
 	}
 
-	err100 := os.RemoveAll(src)
-	if err100 != nil {
-		return fmt.Errorf("remove copied source %q: %w", src, err)
+	removeErr := os.RemoveAll(src)
+	if removeErr != nil {
+		return fmt.Errorf("remove copied source %q: %w", src, removeErr)
 	}
 
 	return nil
@@ -193,8 +261,7 @@ func moveEntry(ctx context.Context, src, dst string, resolve conflictResolver) e
 // UniqueName generates a non-existing sibling name by inserting a suffix
 // before the extension: report.txt becomes report (copy).txt.
 func UniqueName(path string) string {
-	_, err100 := os.Lstat(path)
-	if err100 != nil {
+	if _, err := os.Lstat(path); err != nil {
 		return path
 	}
 
@@ -206,8 +273,7 @@ func UniqueName(path string) string {
 		if i > 2 {
 			candidate = base + fmt.Sprintf(" (copy %d)", i) + ext
 		}
-		_, err100 := os.Lstat(candidate)
-		if err100 != nil {
+		if _, err := os.Lstat(candidate); err != nil {
 			return candidate
 		}
 	}
@@ -228,14 +294,17 @@ func preserveTimes(src, dst string) error {
 }
 
 // ValidateDestinations rejects any job whose target lies inside its own
-// source tree, which would recursively copy the copy.
+// source tree, which would recursively copy the copy. Both sides are
+// resolved through their existing symlinked ancestors first, so an alias
+// pointing into the source cannot smuggle a self-copy past the lexical
+// comparison.
 func ValidateDestinations(items []Item) error {
 	for _, item := range items {
-		src, err := filepath.Abs(item.Source)
+		src, err := resolveReal(item.Source)
 		if err != nil {
 			return fmt.Errorf("resolve %q: %w", item.Source, err)
 		}
-		dst, err := filepath.Abs(item.Target)
+		dst, err := resolveReal(item.Target)
 		if err != nil {
 			return fmt.Errorf("resolve %q: %w", item.Target, err)
 		}
@@ -245,4 +314,31 @@ func ValidateDestinations(items []Item) error {
 	}
 
 	return nil
+}
+
+// resolveReal returns the absolute path with every existing ancestor's
+// symlinks resolved. Missing tail components cannot be resolved and are
+// rejoined lexically onto the resolved prefix; if nothing along the path
+// exists, the lexical absolute path is returned.
+func resolveReal(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+
+	tail := []string{}
+	prefix := abs
+	for {
+		resolved, resolveErr := filepath.EvalSymlinks(prefix)
+		if resolveErr == nil {
+			return filepath.Join(append([]string{resolved}, tail...)...), nil
+		}
+
+		parent := filepath.Dir(prefix)
+		if parent == prefix {
+			return abs, nil // reached the root without resolving; compare lexically
+		}
+		tail = append([]string{filepath.Base(prefix)}, tail...)
+		prefix = parent
+	}
 }
