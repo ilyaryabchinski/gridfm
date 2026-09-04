@@ -330,7 +330,9 @@ func (m *Model) renderInputOverlay(l ui.Layout) string {
 
 	lines := []string{
 		lipgloss.NewStyle().Bold(true).Render(" " + title + " "),
-		inputBox(m.inputValue),
+		// The value is sanitized for display only; submission keeps the
+		// raw name, so renaming never silently rewrites a hostile name.
+		inputBox(ui.SanitizeName(m.inputValue)),
 		lipgloss.NewStyle().Faint(true).Render(hint),
 	}
 

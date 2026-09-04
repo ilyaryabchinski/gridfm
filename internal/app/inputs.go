@@ -29,8 +29,10 @@ func (m *Model) handleSortKeys(key string) (tea.Model, tea.Cmd) {
 		}
 		m.browser.SetSort(mode, order)
 		m.sortOpen = false
+		m.clampScroll()
 	case "o":
 		m.browser.SetSort(m.browser.SortMode(), m.browser.SortOrder().Opposite())
+		m.clampScroll()
 	}
 
 	return m, nil
@@ -45,6 +47,7 @@ func (m *Model) handleFilterKeys(key string) (tea.Model, tea.Cmd) {
 	case keyEsc:
 		m.filterInput = false
 		m.browser.SetFilter("")
+		m.clampScroll()
 
 		return m, nil
 	case keyEnter:
@@ -56,11 +59,13 @@ func (m *Model) handleFilterKeys(key string) (tea.Model, tea.Cmd) {
 		if query != "" {
 			runes := []rune(query)
 			m.browser.SetFilter(string(runes[:len(runes)-1]))
+			m.clampScroll()
 		}
 
 		return m, nil
 	case "ctrl+u":
 		m.browser.SetFilter("")
+		m.clampScroll()
 
 		return m, nil
 	case keyUp, keyDown, keyLeft, keyRight, keyPgUp, keyPgDown, keyHome, keyEnd, keyTab:
@@ -71,6 +76,7 @@ func (m *Model) handleFilterKeys(key string) (tea.Model, tea.Cmd) {
 
 	if runes := []rune(key); len(runes) == 1 && runes[0] >= 0x20 && runes[0] != 0x7f {
 		m.browser.SetFilter(m.browser.Filter() + key)
+		m.clampScroll()
 	}
 
 	return m, nil

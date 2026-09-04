@@ -203,6 +203,19 @@ func (b *Browser) FocusEntryInVisible(path string) bool {
 	return false
 }
 
+// VisibleIndexOf returns the index of the visible entry at path, or -1
+// when no visible entry matches. Unlike FocusEntryInVisible it never moves
+// focus.
+func (b *Browser) VisibleIndexOf(path string) int {
+	for i, e := range b.visible {
+		if e.Path == path {
+			return i
+		}
+	}
+
+	return -1
+}
+
 // CanBack reports whether there is a location behind the current one. It is
 // false while a traversal is in flight so steps cannot stack up.
 func (b *Browser) CanBack() bool {

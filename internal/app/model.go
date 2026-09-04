@@ -109,7 +109,7 @@ type Model struct {
 
 	// Mutation state.
 	mode          Mode
-	selectAnchor  int
+	selectAnchor  string
 	clipboard     ClipboardKind
 	clipboardPath []string
 

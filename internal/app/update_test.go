@@ -11,6 +11,7 @@ import (
 
 	"gridfm/internal/app"
 	"gridfm/internal/browser"
+	"gridfm/internal/operations"
 )
 
 // errTestLoad is a package-level sentinel so tests can assert error
@@ -380,5 +381,32 @@ func TestErrorStateIsSanitized(t *testing.T) {
 	}
 	if !strings.Contains(view, "[31mred") {
 		t.Errorf("sanitized error fragment should be visible, got %q", view)
+	}
+}
+
+func TestFinishedEventRearmsOperationListener(t *testing.T) {
+	t.Parallel()
+
+	m := resize(t, app.New("/d", app.Options{}), 80, 24)
+	m = loaded(t, m, 1, "/d", entriesAt("/d", 3), nil)
+
+	_, cmd := m.Update(app.OperationEventMsg{Event: operations.FinishedEvent{
+		ID:     "op-1",
+		Result: operations.Result{OpID: "op-1", Kind: operations.OpCopy, Succeeded: 1},
+	}})
+	if cmd == nil {
+		t.Fatal("a finished event must return a command")
+	}
+
+	// The refresh and the re-armed listener must come back together:
+	// returning only the refresh dropped the listener, and the serial
+	// manager then blocked forever on its next event publication.
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("finished event command produced %T, want tea.BatchMsg", msg)
+	}
+	if len(batch) != 2 {
+		t.Fatalf("batch has %d commands, want refresh + operation listener (2)", len(batch))
 	}
 }

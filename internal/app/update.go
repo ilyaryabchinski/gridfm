@@ -97,14 +97,24 @@ func (m *Model) applyOperationEvent(ev operations.Event) (tea.Model, tea.Cmd) {
 	case operations.FinishedEvent:
 		m.opProgress = nil
 		m.question = nil
+		m.applyAll = false
 		result := e.Result
 		m.lastResult = &result
 		m.showResults = len(result.Failures) > 0
-		m.note = resultSummary(result)
+		var refresh tea.Cmd
 		if !m.loading {
 			// The mutation may have changed the browsed directory; refresh
-			// unless a navigation is already fetching fresher state.
-			return m, loadDirectoryCmd(m.startRequest(), m.browser.Path)
+			// unless a navigation is already fetching fresher state. The
+			// listener is re-armed alongside the refresh: dropping it here
+			// would stall the serial manager on its next publication.
+			refresh = loadDirectoryCmd(m.startRequest(), m.browser.Path)
+		}
+		// The summary is set after startRequest, which resets transient
+		// state: otherwise a successful job's summary is cleared before it
+		// is ever shown.
+		m.note = resultSummary(result)
+		if refresh != nil {
+			return m, tea.Batch(refresh, listenOperations(m.ops))
 		}
 	}
 
@@ -152,8 +162,14 @@ func (m *Model) applyDirectoryLoaded(msg DirectoryLoadedMsg) {
 		return
 	}
 
+	// Recovering from a failed load: its error note must not outlive the
+	// retry that fixed it. Any other note — action feedback, open errors,
+	// result summaries — is sticky until the next event replaces it or esc
+	// clears it, so a refresh can no longer wipe a summary it raced with.
+	if m.loadErr != nil {
+		m.note = ""
+	}
 	m.loadErr = nil
-	m.note = ""
 	m.browser.SetEntries(msg.Path, msg.Entries)
 	m.syncGridColumns()
 	m.clampScroll()
@@ -206,7 +222,8 @@ func (m *Model) syncGridColumns() {
 }
 
 // handleKey applies Milestone 1 keybindings, routed by the active surface:
-// the sort menu overlay, the filter input, or normal browsing.
+// the sort menu overlay, the filter input, the results overlay, or normal
+// browsing.
 func (m *Model) handleKey(key string) (tea.Model, tea.Cmd) {
 	switch {
 	case m.input != inputNone:
@@ -215,6 +232,8 @@ func (m *Model) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m.handleQuestionKeys(key)
 	case m.confirm != confirmNone:
 		return m.handleConfirmKeys(key)
+	case m.showResults:
+		return m.handleResultsKeys(key)
 	case m.sortOpen:
 		return m.handleSortKeys(key)
 	case m.filterInput:
@@ -222,6 +241,16 @@ func (m *Model) handleKey(key string) (tea.Model, tea.Cmd) {
 	}
 
 	return m.handleNormalKeys(key)
+}
+
+// handleResultsKeys drives the blocking results overlay: only its close
+// keys act, so hidden grid shortcuts never fire while it is up.
+func (m *Model) handleResultsKeys(key string) (tea.Model, tea.Cmd) {
+	if key == keyEsc || key == "e" {
+		m.showResults = false
+	}
+
+	return m, nil
 }
 
 // handleNormalKeys applies browsing keys outside overlays and inputs: it
@@ -317,10 +346,27 @@ func (m *Model) toggleSelectMode() (tea.Model, tea.Cmd) {
 	}
 
 	m.mode = ModeSelect
-	m.selectAnchor = m.browser.FocusIndex()
+	m.selectAnchor = m.browser.FocusedPath()
 	m.browser.ToggleFocused()
 
 	return m, nil
+}
+
+// anchorIndex resolves the select-mode anchor to a visible index by entry
+// identity, so sorting, filtering, or navigation between the anchor press
+// and a movement key cannot detach the range from its entry. When the
+// anchored entry is no longer visible, the anchor moves to the focused
+// entry so the next movement selects from where the user is looking.
+func (m *Model) anchorIndex() int {
+	if m.selectAnchor != "" {
+		if idx := m.browser.VisibleIndexOf(m.selectAnchor); idx >= 0 {
+			return idx
+		}
+	}
+
+	m.selectAnchor = m.browser.FocusedPath()
+
+	return m.browser.FocusIndex()
 }
 
 // handleDisplayKeys owns interface visibility and presentation: sidebar
@@ -341,6 +387,7 @@ func (m *Model) handleDisplayKeys(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case ".":
 		m.browser.SetShowHidden(!m.browser.ShowHidden())
+		m.clampScroll()
 
 		return m, nil
 	case "+", "=":
@@ -461,7 +508,7 @@ func (m *Model) handleMovement(key string) (tea.Model, tea.Cmd) {
 	moved, parentShortcut := m.moveFocus(key)
 	if moved {
 		if m.mode == ModeSelect {
-			m.browser.SelectRange(m.selectAnchor, m.browser.FocusIndex())
+			m.browser.SelectRange(m.anchorIndex(), m.browser.FocusIndex())
 		}
 		m.clampScroll()
 

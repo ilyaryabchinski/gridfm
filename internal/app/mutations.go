@@ -1,8 +1,12 @@
 package app
 
 import (
+	"errors"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 
 	"gridfm/internal/operations"
 
@@ -12,7 +16,11 @@ import (
 // This file owns the mutation workflows: staging, pasting, creating,
 // renaming, trashing, and deleting, plus the overlays that gate them.
 // Every mutation is validated and revalidated before it runs; the file
-// system is only touched inside operation jobs.
+// system is only touched inside operation jobs. The one exception is the
+// single Lstat in pathIsDirectory: deciding the strength of a permanent
+// delete confirmation needs the entry's type even when the selection came
+// from another directory, and one stat is cheap next to the destructive
+// operation it guards.
 
 // mutationSources returns the paths a mutation acts on: the selection when
 // any exists, otherwise the focused entry.
@@ -159,22 +167,42 @@ func (m *Model) confirmMutation(kind confirmKind) (tea.Model, tea.Cmd) {
 
 // requiresTypedConfirm reports whether a delete needs a typed "yes":
 // whenever it affects multiple items or any directory. Directory checks
-// use the cached entry list; paths from other directories count as files,
-// and the typed confirmation already applies to multi-item deletes.
+// use the cached entry list first; paths from other directories are
+// checked against the filesystem, since selections persist across
+// directories and the typed confirmation is the last safety net.
 func (m *Model) requiresTypedConfirm(paths []string) bool {
 	if len(paths) > 1 {
 		return true
 	}
 
 	for _, p := range paths {
-		for _, e := range m.browser.Entries {
-			if e.Path == p && e.IsDir {
-				return true
-			}
+		if m.pathIsDirectory(p) {
+			return true
 		}
 	}
 
 	return false
+}
+
+// pathIsDirectory reports whether the path names a directory: from the
+// cached entries when present there, otherwise from the filesystem itself.
+// A path whose type cannot be determined counts as a directory, so the
+// stronger confirmation never silently lapses.
+func (m *Model) pathIsDirectory(path string) bool {
+	for _, e := range m.browser.Entries {
+		if e.Path == path {
+			return e.IsDir
+		}
+	}
+
+	info, err := os.Lstat(path)
+	if err != nil {
+		// A vanished path has nothing to confirm beyond the dialog; any
+		// other stat failure keeps the cautious default.
+		return !errors.Is(err, fs.ErrNotExist)
+	}
+
+	return info.IsDir()
 }
 
 // handleInputOverlayKeys drives the create/rename text overlay.
@@ -198,7 +226,11 @@ func (m *Model) handleInputOverlayKeys(key string) (tea.Model, tea.Cmd) {
 
 		return m, nil
 	case "ctrl+d":
-		m.input = toggleCreateKind(m.input)
+		// Only the create overlay advertises the kind switch; in rename it
+		// must not silently turn the operation into file creation.
+		if m.input == inputCreateFile || m.input == inputCreateDir {
+			m.input = toggleCreateKind(m.input)
+		}
 
 		return m, nil
 	}
@@ -416,11 +448,11 @@ func (m *Model) applyConfirm() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// opCounter produces stable operation identifiers.
-var opCounter int //nolint:gochecknoglobals // serial application state
+// opCounter produces stable operation identifiers. It is atomic because
+// parallel tests drive several models at once; the production Update loop
+// runs on a single goroutine.
+var opCounter atomic.Int64 //nolint:gochecknoglobals // process-wide identity counter
 
 func nextOpID() string {
-	opCounter++
-
-	return "op-" + strconv.Itoa(opCounter)
+	return "op-" + strconv.FormatInt(opCounter.Add(1), 10)
 }
