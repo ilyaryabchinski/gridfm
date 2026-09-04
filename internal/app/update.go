@@ -53,7 +53,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case DirectoryLoadedMsg:
 		m.applyDirectoryLoaded(msg)
 
+		// The refreshed listing may have moved focus to a different entry;
+		// the inspector follows it when open.
+		if m.inspectorOn {
+			return m, m.followInspector()
+		}
+
 		return m, nil
+
+	case InspectorLoadedMsg:
+		return m.applyInspectorLoaded(msg)
 
 	case EntryResolvedMsg:
 		return m.applyEntryResolved(msg)
@@ -227,6 +236,52 @@ func (m *Model) applyOpenFinished(msg OpenFinishedMsg) (tea.Model, tea.Cmd) {
 // so vertical movement matches what is actually rendered.
 func (m *Model) syncGridColumns() {
 	m.browser.SetColumns(m.layout().Columns)
+}
+
+// requestInspector issues an asynchronous metadata load for the focused
+// entry. Any current panel content is dropped immediately, so stale data
+// never lingers beside a new focus.
+func (m *Model) requestInspector() tea.Cmd {
+	m.inspectorReq++
+	m.inspector = nil
+	m.inspectorErr = nil
+
+	entry, ok := m.browser.Focused()
+	if !ok {
+		m.inspectorPath = ""
+
+		return nil
+	}
+	m.inspectorPath = entry.Path
+
+	return inspectCmd(m.inspectorReq, entry.Path)
+}
+
+// followInspector re-requests the panel when focus has moved to an entry
+// the panel does not already show.
+func (m *Model) followInspector() tea.Cmd {
+	if m.browser.FocusedPath() == m.inspectorPath {
+		return nil
+	}
+
+	return m.requestInspector()
+}
+
+// applyInspectorLoaded applies one inspector load, rejecting results that
+// no longer match the newest request.
+func (m *Model) applyInspectorLoaded(msg InspectorLoadedMsg) (tea.Model, tea.Cmd) {
+	if msg.RequestID != m.inspectorReq {
+		return m, nil // stale result from a superseded request
+	}
+	if msg.Err != nil {
+		m.inspectorErr = msg.Err
+
+		return m, nil
+	}
+
+	m.inspector = msg.Info
+
+	return m, nil
 }
 
 // handleKey applies Milestone 1 keybindings, routed by the active surface:
@@ -409,6 +464,23 @@ func (m *Model) handleDisplayKeys(key string) (tea.Model, tea.Cmd) {
 		m.filterInput = true
 
 		return m, nil
+	case "i":
+		if m.region != RegionGrid {
+			return m, nil
+		}
+		m.inspectorOn = !m.inspectorOn
+		if !m.inspectorOn {
+			// Closing drops the panel content and invalidates any load in
+			// flight.
+			m.inspector = nil
+			m.inspectorErr = nil
+			m.inspectorPath = ""
+			m.inspectorReq++
+
+			return m, nil
+		}
+
+		return m, m.requestInspector()
 	}
 
 	return m.handleEntryKeys(key)
@@ -522,7 +594,12 @@ func (m *Model) handleMovement(key string) (tea.Model, tea.Cmd) {
 		}
 		m.clampScroll()
 
-		return m, nil
+		var follow tea.Cmd
+		if m.inspectorOn {
+			follow = m.followInspector()
+		}
+
+		return m, follow
 	}
 	if parentShortcut {
 		return m.goToParent()

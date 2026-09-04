@@ -8,6 +8,7 @@ import (
 
 	"gridfm/internal/browser"
 	"gridfm/internal/places"
+	"gridfm/internal/preview"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -72,5 +73,15 @@ func desktopOpenCmd(openID uint64, path string) tea.Cmd {
 func loadPlacesCmd() tea.Cmd {
 	return func() tea.Msg {
 		return PlacesLoadedMsg{Places: places.List(), Home: places.Home()}
+	}
+}
+
+// inspectCmd collects one entry's inspector metadata off the update loop.
+// The request ID tags the result for stale rejection.
+func inspectCmd(requestID uint64, path string) tea.Cmd {
+	return func() tea.Msg {
+		info, err := preview.Inspect(path)
+
+		return InspectorLoadedMsg{RequestID: requestID, Path: path, Info: info, Err: err}
 	}
 }

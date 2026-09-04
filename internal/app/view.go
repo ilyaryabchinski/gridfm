@@ -45,6 +45,12 @@ func (m *Model) View() string {
 		middle = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, body)
 	}
 
+	if l.InspectorWidth > 0 {
+		loading := m.inspector == nil && m.inspectorErr == nil
+		panel := ui.RenderInspector(l.InspectorWidth, l.ContentHeight, m.inspector, m.inspectorErr, loading)
+		middle = lipgloss.JoinHorizontal(lipgloss.Top, middle, panel)
+	}
+
 	middle = m.withOverlay(l, middle)
 
 	rows := []string{
@@ -64,7 +70,7 @@ func (m *Model) View() string {
 }
 
 func (m *Model) layout() ui.Layout {
-	return ui.ComputeLayout(m.width, m.height, m.zoom, m.sidebarOn)
+	return ui.ComputeLayoutWithInspector(m.width, m.height, m.zoom, m.sidebarOn, m.inspectorOn)
 }
 
 // bodyHeight returns the cells available to the grid: one less while the

@@ -6,6 +6,7 @@ import (
 	"gridfm/internal/browser"
 	"gridfm/internal/operations"
 	"gridfm/internal/places"
+	"gridfm/internal/preview"
 	"gridfm/internal/ui"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -143,6 +144,14 @@ type Model struct {
 	// Results overlay state.
 	showResults bool
 
+	// Inspector panel state. The request id rejects stale loads; the panel
+	// content clears the moment focus moves elsewhere.
+	inspectorOn   bool
+	inspectorReq  uint64
+	inspectorPath string
+	inspector     *preview.Info
+	inspectorErr  error
+
 	width     int
 	height    int
 	requestID uint64
@@ -249,6 +258,17 @@ func (m *Model) Busy() bool { return m.ops.Busy() }
 func (m *Model) EnqueueOperation(op operations.Operation) error {
 	return m.ops.Enqueue(op)
 }
+
+// Inspector accessor methods for tests and status rendering.
+
+// InspectorOn reports whether the inspector panel is toggled open.
+func (m *Model) InspectorOn() bool { return m.inspectorOn }
+
+// Inspector returns the panel's current metadata, if loaded.
+func (m *Model) Inspector() *preview.Info { return m.inspector }
+
+// InspectorRequestID returns the current inspector request identity.
+func (m *Model) InspectorRequestID() uint64 { return m.inspectorReq }
 
 // LastResult returns the most recent finished operation result, if any.
 func (m *Model) LastResult() *operations.Result { return m.lastResult }

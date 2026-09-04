@@ -8,6 +8,7 @@ import (
 	"gridfm/internal/browser"
 	"gridfm/internal/operations"
 	"gridfm/internal/places"
+	"gridfm/internal/preview"
 )
 
 // DirectoryLoadedMsg carries the result of an asynchronous directory read.
@@ -52,4 +53,14 @@ type OpenFinishedMsg struct {
 // after every delivery so exactly one listener blocks at a time.
 type OperationEventMsg struct {
 	Event operations.Event
+}
+
+// InspectorLoadedMsg carries the metadata result for the inspector panel.
+// Results apply only when RequestID matches the newest inspector request,
+// so a slow load can never overwrite a newer focus.
+type InspectorLoadedMsg struct {
+	RequestID uint64
+	Path      string
+	Info      *preview.Info
+	Err       error
 }

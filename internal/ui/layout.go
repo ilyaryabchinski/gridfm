@@ -31,6 +31,10 @@ const (
 	SidebarWidth    = 20
 	MinSidebarWidth = 16
 	MaxSidebarWidth = 28
+
+	// InspectorWidth is the docked inspector panel width. The panel is
+	// disabled below NarrowThreshold, where the sidebar already overlays.
+	InspectorWidth = 26
 )
 
 // Layout is the derived responsive geometry for one terminal size, zoom,
@@ -51,6 +55,10 @@ type Layout struct {
 	// the grid keeps the full width and the sidebar floats above it.
 	SidebarOverlay bool
 	SidebarVisible bool
+
+	// InspectorWidth is the docked inspector panel width, 0 when the
+	// inspector is off or the terminal is too narrow to dock it.
+	InspectorWidth int
 
 	// GridWidth is the width available to the grid; the full terminal
 	// width except in docked-sidebar mode.
@@ -82,10 +90,22 @@ func SidebarWidthFor(width int) int {
 //	columns = max(1, floor((gridWidth + gapX) / (cardWidth + gapX)))
 //	rowsVisible = max(1, floor((contentHeight + gapY) / (cardHeight + gapY)))
 func ComputeLayout(width, height int, zoom ZoomLevel, sidebarRequested bool) Layout {
+	return ComputeLayoutWithInspector(width, height, zoom, sidebarRequested, false)
+}
+
+// ComputeLayoutWithInspector is ComputeLayout with the inspector panel
+// request. The inspector docks only on wide terminals; in narrow-overlay
+// mode the grid keeps the full width.
+func ComputeLayoutWithInspector(width, height int, zoom ZoomLevel, sidebarRequested, inspectorRequested bool) Layout {
 	narrow := width < NarrowThreshold
 	sidebarWidth := SidebarWidthFor(width)
 	sidebarVisible := sidebarRequested && sidebarWidth > 0
 	overlay := sidebarRequested && narrow
+
+	inspectorWidth := 0
+	if inspectorRequested && !narrow {
+		inspectorWidth = InspectorWidth
+	}
 
 	if height < CompactHeightThreshold {
 		zoom = ZoomCompact
@@ -94,7 +114,10 @@ func ComputeLayout(width, height int, zoom ZoomLevel, sidebarRequested bool) Lay
 
 	gridWidth := width
 	if sidebarVisible {
-		gridWidth = width - sidebarWidth
+		gridWidth -= sidebarWidth
+	}
+	if inspectorWidth > 0 {
+		gridWidth -= inspectorWidth
 	}
 
 	contentHeight := height - HeaderHeight - StatusBarHeight
@@ -119,6 +142,7 @@ func ComputeLayout(width, height int, zoom ZoomLevel, sidebarRequested bool) Lay
 		SidebarWidth:   sidebarWidth,
 		SidebarOverlay: overlay,
 		SidebarVisible: sidebarVisible,
+		InspectorWidth: inspectorWidth,
 		GridWidth:      gridWidth,
 		ContentWidth:   width,
 		ContentHeight:  contentHeight,
