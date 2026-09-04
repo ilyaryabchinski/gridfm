@@ -1,6 +1,8 @@
 package app
 
 import (
+	"strconv"
+
 	"gridfm/internal/browser"
 	"gridfm/internal/operations"
 	"gridfm/internal/places"
@@ -121,6 +123,7 @@ type Model struct {
 	ops        *operations.Manager
 	opProgress *opProgress
 	lastResult *operations.Result
+	jobLog     []operations.Result
 
 	// Input overlay state.
 	input       inputKind
@@ -249,6 +252,42 @@ func (m *Model) EnqueueOperation(op operations.Operation) error {
 
 // LastResult returns the most recent finished operation result, if any.
 func (m *Model) LastResult() *operations.Result { return m.lastResult }
+
+// jobLogDepth bounds the finished-job summaries kept for the sidebar shelf.
+const jobLogDepth = 6
+
+// rememberJob records a finished result, newest first, capped so the shelf
+// cannot grow without bound across a long session.
+func (m *Model) rememberJob(result operations.Result) {
+	m.jobLog = append([]operations.Result{result}, m.jobLog...)
+	if len(m.jobLog) > jobLogDepth {
+		m.jobLog = m.jobLog[:jobLogDepth]
+	}
+}
+
+// operationLines renders the sidebar operation shelf: a running job line
+// plus the recent finished summaries, newest first.
+func (m *Model) operationLines() []string {
+	lines := make([]string, 0, 1+len(m.jobLog))
+	if p := m.opProgress; p != nil {
+		line := "• " + p.kind.String() + " " + strconv.Itoa(p.done) + "/" + strconv.Itoa(p.total)
+		if p.target != "" {
+			line += " " + p.target
+		}
+		lines = append(lines, line)
+	}
+	for _, r := range m.jobLog {
+		marker := "✓"
+		if r.Cancelled {
+			marker = "x"
+		} else if r.Failed > 0 {
+			marker = "✗"
+		}
+		lines = append(lines, marker+" "+resultSummary(r))
+	}
+
+	return lines
+}
 
 // listenOperations subscribes to the operation event stream. Update re-arms
 // it after every event so exactly one listener blocks at a time.

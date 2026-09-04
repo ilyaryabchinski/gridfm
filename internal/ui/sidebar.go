@@ -14,8 +14,10 @@ type SidebarItem struct {
 
 // RenderSidebar draws the places panel at the given width. selected is the
 // highlighted index; focused adds the active marker and bright styling used
-// when the sidebar owns keyboard focus.
-func RenderSidebar(width, height int, items []SidebarItem, selected int, focused bool) string {
+// when the sidebar owns keyboard focus. operations renders the non-blocking
+// operation shelf beneath the places: one line for a running job plus the
+// most recent finished summaries, already summarized by the caller.
+func RenderSidebar(width, height int, items []SidebarItem, selected int, focused bool, operations []string) string {
 	if width < 1 {
 		width = 1
 	}
@@ -23,7 +25,7 @@ func RenderSidebar(width, height int, items []SidebarItem, selected int, focused
 	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")).
 		Render(" places")
 
-	lines := make([]string, 0, 2+len(items))
+	lines := make([]string, 0, 4+len(items)+len(operations))
 	lines = append(lines, title, "")
 	rowStyle := lipgloss.NewStyle().Faint(true)
 	if focused {
@@ -40,6 +42,15 @@ func RenderSidebar(width, height int, items []SidebarItem, selected int, focused
 		lines = append(lines, marker+row)
 	}
 
+	if len(operations) > 0 {
+		lines = append(lines, "",
+			lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")).
+				Render(" operations"))
+		for _, op := range operations {
+			lines = append(lines, "  "+rowStyle.Render(TruncateName(SanitizeName(op), width-3)))
+		}
+	}
+
 	body := lipgloss.JoinVertical(lipgloss.Left, lines...)
 
 	return lipgloss.NewStyle().
@@ -54,8 +65,8 @@ func RenderSidebar(width, height int, items []SidebarItem, selected int, focused
 // RenderSidebarOverlay draws the sidebar floating over a grid frame: the
 // sidebar lines replace the leftmost cells of each grid line. Overlay lines
 // are cut with ANSI awareness so styling survives.
-func RenderSidebarOverlay(gridFrame string, sidebarWidth int, items []SidebarItem, selected int) string {
-	panel := RenderSidebar(sidebarWidth, strings.Count(gridFrame, "\n")+1, items, selected, true)
+func RenderSidebarOverlay(gridFrame string, sidebarWidth int, items []SidebarItem, selected int, operations []string) string {
+	panel := RenderSidebar(sidebarWidth, strings.Count(gridFrame, "\n")+1, items, selected, true, operations)
 	panelLines := strings.Split(panel, "\n")
 	gridLines := strings.Split(gridFrame, "\n")
 

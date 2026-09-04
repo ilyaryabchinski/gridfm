@@ -107,6 +107,7 @@ func (m *Model) applyOperationEvent(ev operations.Event) (tea.Model, tea.Cmd) {
 		m.applyAll = false
 		result := e.Result
 		m.lastResult = &result
+		m.rememberJob(result)
 		m.showResults = len(result.Failures) > 0
 		var refresh tea.Cmd
 		if !m.loading {

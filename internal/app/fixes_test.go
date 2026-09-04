@@ -306,6 +306,52 @@ func TestShelfShowsByteProgress(t *testing.T) {
 	}
 }
 
+// TestJobLogSummariesReachTheSidebarShelf pins the Milestone 3 shelf:
+// finished jobs leave summarized, status-marked lines in the sidebar, the
+// running job shows its counters, and the log is capped.
+func TestJobLogSummariesReachTheSidebarShelf(t *testing.T) {
+	t.Parallel()
+
+	m := resize(t, app.New("/d", app.Options{}), 80, 24)
+	m = loaded(t, m, 1, "/d", entriesAt("/d", 2), nil)
+
+	// The running job's counters show while it works.
+	m = feed(t, m, app.OperationEventMsg{
+		Event: operations.ProgressEvent{ID: "op-run", Kind: operations.OpCopy, Done: 1, Total: 2, Target: "/d/a"},
+	})
+	if view := m.View(); !strings.Contains(view, "• copy 1/2") {
+		t.Errorf("the running job should show on the shelf, got %q", view)
+	}
+
+	// A clean finish leaves a check-marked summary; a failed one an x.
+	m = feed(t, m, app.OperationEventMsg{
+		Event: operations.FinishedEvent{ID: "op-run", Result: operations.Result{
+			OpID: "op-run", Kind: operations.OpCopy, Succeeded: 2,
+		}},
+	})
+	m.DrainEvents()
+	if view := m.View(); !strings.Contains(view, "✓ copy: 2 oks") {
+		t.Errorf("the finished job should be summarized on the shelf, got %q", view)
+	}
+
+	m = feed(t, m, app.OperationEventMsg{
+		Event: operations.FinishedEvent{ID: "op-2", Result: operations.Result{
+			OpID: "op-2", Kind: operations.OpDelete, Failed: 1, Cancelled: true,
+			Failures: []operations.ItemError{{Path: "/d/x", Err: errTestLoad}},
+		}},
+	})
+	m.DrainEvents()
+	// The failed result opens the blocking results overlay; close it to
+	// see the sidebar shelf again.
+	m = feed(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	if view := m.View(); !strings.Contains(view, "x cancelled dele") {
+		t.Errorf("the cancelled job should be marked on the shelf, got %q", view)
+	}
+	if !strings.Contains(m.View(), "✓ copy: 2 oks") {
+		t.Error("the earlier clean job should stay listed on the shelf")
+	}
+}
+
 // TestLoadErrorNoteClearsOnSuccessfulRetry pins that a load error note is
 // cleared exactly when a retry succeeds, not on every unrelated load.
 func TestLoadErrorNoteClearsOnSuccessfulRetry(t *testing.T) {

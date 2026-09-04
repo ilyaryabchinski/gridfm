@@ -29,7 +29,7 @@ func (m *Model) View() string {
 		// The overlay panel keeps the full sidebar width even though no
 		// grid columns are reserved for it.
 		body = ui.RenderSidebarOverlay(body,
-			min(ui.SidebarWidth, l.ContentWidth), m.sidebarItems(), m.placeIdx)
+			min(ui.SidebarWidth, l.ContentWidth), m.sidebarItems(), m.placeIdx, m.operationLines())
 	}
 
 	middle := body
@@ -40,6 +40,7 @@ func (m *Model) View() string {
 			m.sidebarItems(),
 			m.placeIdx,
 			m.region == RegionSidebar,
+			m.operationLines(),
 		)
 		middle = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, body)
 	}
