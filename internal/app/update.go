@@ -68,10 +68,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.applyDirChanged(msg)
 
 	case WatchReadyMsg:
-		if msg.Err != nil && !m.watchFailed {
-			m.watchFailed = true
-			m.note = "watch unavailable; r refreshes"
-		}
+		m.degradeWatch(msg.Err)
 
 		return m, nil
 
@@ -138,6 +135,13 @@ func (m *Model) applyOperationEvent(ev operations.Event) (tea.Model, tea.Cmd) {
 		m.opProgress = nil
 		m.question = nil
 		m.applyAll = false
+		// Only one blocking overlay may be armed: the results overlay
+		// claims the keyboard, so any open input, confirmation, sort menu,
+		// or filter closes with the finished job.
+		m.input = inputNone
+		m.confirm = confirmNone
+		m.sortOpen = false
+		m.filterInput = false
 		result := e.Result
 		m.lastResult = &result
 		m.rememberJob(result)
@@ -329,10 +333,7 @@ func (m *Model) applyInspectorLoaded(msg InspectorLoadedMsg) (tea.Model, tea.Cmd
 // failure degrades to manual refresh with a single note.
 func (m *Model) applyDirChanged(msg DirChangedMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
-		if !m.watchFailed {
-			m.watchFailed = true
-			m.note = "watch unavailable; r refreshes"
-		}
+		m.degradeWatch(msg.Err)
 
 		return m, listenWatch(m.watch)
 	}

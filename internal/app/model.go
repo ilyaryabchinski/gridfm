@@ -311,6 +311,16 @@ func (m *Model) WatchPath() string {
 	return m.watch.Path()
 }
 
+// degradeWatch surfaces a watcher failure once and records the manual
+// refresh fallback.
+func (m *Model) degradeWatch(err error) {
+	if err == nil || m.watchFailed {
+		return
+	}
+	m.watchFailed = true
+	m.note = "watch unavailable; r refreshes"
+}
+
 // WatchDirectory points the watcher at a directory and returns the
 // readiness command. Production flows reach it through Update; it is
 // exported for tests and programmatic use.

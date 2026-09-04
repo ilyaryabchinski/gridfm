@@ -32,6 +32,13 @@ func (m *Model) View() string {
 		body = ui.RenderSidebarOverlay(body,
 			min(ui.SidebarWidth, l.ContentWidth), m.sidebarItems(), m.placeIdx, m.operationLines())
 	}
+	if l.InspectorWidth == 0 && m.inspectorOn {
+		// Narrow terminals cannot dock the inspector without starving the
+		// grid; it floats over the right edge instead, like the sidebar.
+		body = ui.RenderInspectorOverlay(body,
+			min(ui.InspectorWidth, l.ContentWidth), m.inspector, m.inspectorErr,
+			m.inspector == nil && m.inspectorErr == nil)
+	}
 
 	middle := body
 	if l.SidebarVisible {

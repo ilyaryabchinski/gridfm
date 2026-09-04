@@ -11,7 +11,10 @@ import (
 func TestListIncludesHomeAndExistingUserDirs(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config")) // keep XDG lookups inside the temp dir
+	// Keep every XDG lookup inside the temp dir so the host environment
+	// cannot leak a Trash directory into the assertions.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
 
 	err := os.Mkdir(filepath.Join(home, "Downloads"), 0o755)
 	if err != nil {
@@ -37,6 +40,29 @@ func TestListIncludesHomeAndExistingUserDirs(t *testing.T) {
 	}
 	if list[1].Label != "Downloads" {
 		t.Errorf("second place = %+v, want Downloads", list[1])
+	}
+}
+
+func TestListIncludesTrashWhenItExists(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dataHome := filepath.Join(home, ".local", "share")
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_DATA_HOME", dataHome)
+
+	// Without a trash directory there is no Trash place.
+	if list := places.List(); len(list) != 1 {
+		t.Fatalf("places without trash = %+v, want only Home", list)
+	}
+
+	trash := filepath.Join(dataHome, "Trash")
+	if err := os.MkdirAll(filepath.Join(trash, "files"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	list := places.List()
+	if len(list) != 2 || list[1].Label != "Trash" || list[1].Path != trash {
+		t.Fatalf("places = %+v, want Home then Trash at %s", list, trash)
 	}
 }
 

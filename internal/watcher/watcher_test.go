@@ -113,6 +113,46 @@ func TestSameWatchIsIdempotent(t *testing.T) {
 	}
 }
 
+// TestFailedWatchDoesNotCommitPath pins the switch contract: a failed Add
+// must not claim the path. Otherwise a retry of the same path would
+// early-return success while no events ever arrive — the consumer would
+// believe it is watching when it is not.
+func TestFailedWatchDoesNotCommitPath(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	w, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+
+	if err := w.Watch(filepath.Join(dir, "ghost")); err == nil {
+		t.Fatal("watching a missing directory must fail")
+	}
+	if w.Path() != "" {
+		t.Errorf("failed watch committed %q, want no path", w.Path())
+	}
+
+	// The retry fails honestly, and a valid path still works afterwards.
+	if err := w.Watch(filepath.Join(dir, "ghost")); err == nil {
+		t.Fatal("retrying a failed watch must fail again, not lie")
+	}
+	if err := w.Watch(dir); err != nil {
+		t.Fatal(err)
+	}
+	if w.Path() != dir {
+		t.Fatalf("path = %q, want %q", w.Path(), dir)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "fresh"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if ev := expectEvent(t, w); ev.Path != dir {
+		t.Fatalf("event = %+v, want %q", ev, dir)
+	}
+}
+
 // TestCloseStopsEventStream pins the shutdown contract: the events channel
 // closes when the watcher stops.
 func TestCloseStopsEventStream(t *testing.T) {

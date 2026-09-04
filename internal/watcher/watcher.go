@@ -67,7 +67,9 @@ func newWith(notify *fsnotify.Watcher, delay time.Duration) *Watcher {
 func (w *Watcher) Events() <-chan Event { return w.events }
 
 // Watch switches the watch to path. Events outside the current path are
-// dropped, and the switch itself never produces a notification.
+// dropped, and the switch itself never produces a notification. The switch
+// commits only after the underlying watch succeeds, so a failed Add leaves
+// the previous path watching and a retry honestly fails again.
 func (w *Watcher) Watch(path string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -76,12 +78,16 @@ func (w *Watcher) Watch(path string) error {
 		return nil
 	}
 
+	if err := w.notify.Add(path); err != nil {
+		return err
+	}
+
 	if w.path != "" {
 		_ = w.notify.Remove(w.path)
 	}
 	w.path = path
 
-	return w.notify.Add(path)
+	return nil
 }
 
 // Path returns the currently watched directory, empty when none.

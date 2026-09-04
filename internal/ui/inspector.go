@@ -8,6 +8,7 @@ import (
 	"gridfm/internal/preview"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // RenderInspector draws the right-side metadata panel: identity, size,
@@ -96,4 +97,36 @@ func faint(s string) string {
 	}
 
 	return lipgloss.NewStyle().Faint(true).Render(s)
+}
+
+// RenderInspectorOverlay draws the inspector floating over the right edge
+// of a grid frame: the panel lines replace the rightmost cells of each grid
+// line. It is the narrow-terminal form of the panel, which cannot dock
+// without starving the grid. Overlay lines are cut with ANSI awareness so
+// styling survives.
+func RenderInspectorOverlay(gridFrame string, width int, info *preview.Info, loadErr error, loading bool) string {
+	if width < 1 {
+		width = 1
+	}
+
+	panel := RenderInspector(width, strings.Count(gridFrame, "\n")+1, info, loadErr, loading)
+	panelLines := strings.Split(panel, "\n")
+	gridLines := strings.Split(gridFrame, "\n")
+
+	out := make([]string, 0, len(gridLines))
+	for i, gridLine := range gridLines {
+		if i >= len(panelLines) {
+			out = append(out, gridLine)
+
+			continue
+		}
+
+		leftWidth := ansi.StringWidth(gridLine) - width
+		if leftWidth < 0 {
+			leftWidth = 0
+		}
+		out = append(out, ansiCut(gridLine, leftWidth)+panelLines[i])
+	}
+
+	return strings.Join(out, "\n")
 }

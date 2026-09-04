@@ -27,9 +27,9 @@ var userDirs = []string{
 	"Projects",
 }
 
-// List returns the places for the sidebar: Home first, then each standard
-// user folder that exists. It never fails; without a home directory the
-// list is simply empty.
+// List returns the places for the sidebar: Home, the home Trash when it
+// exists, then each standard user folder that exists. It never fails;
+// without a home directory the list is simply empty.
 func List() []Place {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
@@ -37,6 +37,11 @@ func List() []Place {
 	}
 
 	list := []Place{{Label: "Home", Path: home}}
+	if trash, ok := homeTrash(); ok {
+		if info, statErr := os.Stat(trash); statErr == nil && info.IsDir() {
+			list = append(list, Place{Label: "Trash", Path: trash})
+		}
+	}
 	for _, dir := range userDirs {
 		path := filepath.Join(home, dir)
 		info, statErr := os.Stat(path)
@@ -48,6 +53,19 @@ func List() []Place {
 	}
 
 	return list
+}
+
+// homeTrash resolves the freedesktop.org home trash location, mirroring
+// the XDG basedir rules the trash implementation follows.
+func homeTrash() (string, bool) {
+	if dataHome := os.Getenv("XDG_DATA_HOME"); dataHome != "" {
+		return filepath.Join(dataHome, "Trash"), true
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".local", "share", "Trash"), true
+	}
+
+	return "", false
 }
 
 // Home returns the user's home directory, or an empty string when unknown.
