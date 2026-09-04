@@ -51,12 +51,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case DirectoryLoadedMsg:
-		save := m.applyDirectoryLoaded(msg)
+		save, watch := m.applyDirectoryLoaded(msg)
 
 		// The refreshed listing may have moved focus to a different entry;
-		// the inspector follows it when open. The watcher moves to the
-		// loaded directory off the update loop.
-		cmds := tea.Batch(save, watchDirCmd(m.watch, msg.Path))
+		// the inspector follows it when open. The watcher only moves for
+		// results that actually applied: a stale or failed load must never
+		// re-point it away from the browsed directory.
+		cmds := tea.Batch(save, watch)
 		if m.inspectorOn {
 			return m, tea.Batch(cmds, m.followInspector())
 		}
@@ -183,11 +184,14 @@ func itoaPlural(n int, word string) string {
 	return plain + "s"
 }
 
-// applyDirectoryLoaded applies a directory load and reports the command
-// persisting the new recent location, nil for failed loads.
-func (m *Model) applyDirectoryLoaded(msg DirectoryLoadedMsg) tea.Cmd {
+// applyDirectoryLoaded applies a directory load. It reports the command
+// persisting the new recent location and the command re-pointing the
+// watcher: the watcher follows only genuinely applied results, and a
+// failed load keeps it on the still-current browsed directory. Stale
+// results return nil for both.
+func (m *Model) applyDirectoryLoaded(msg DirectoryLoadedMsg) (tea.Cmd, tea.Cmd) {
 	if msg.RequestID != m.requestID {
-		return nil // stale result from a superseded request
+		return nil, nil // stale result from a superseded request
 	}
 
 	m.loading = false
@@ -201,7 +205,7 @@ func (m *Model) applyDirectoryLoaded(msg DirectoryLoadedMsg) tea.Cmd {
 		// note so failed navigation is never silent.
 		m.note = "error: " + msg.Err.Error()
 
-		return nil
+		return nil, watchDirCmd(m.watch, m.browser.Path)
 	}
 
 	// Recovering from a failed load: its error note must not outlive the
@@ -216,7 +220,16 @@ func (m *Model) applyDirectoryLoaded(msg DirectoryLoadedMsg) tea.Cmd {
 	m.syncGridColumns()
 	m.clampScroll()
 
-	return m.rememberRecent(msg.Path)
+	// A change notification dropped while this load was in flight means
+	// the snapshot is already stale: schedule one more reload.
+	var reschedule tea.Cmd
+	if m.watchDirty && m.watchDirtyFor == msg.Path {
+		m.watchDirty = false
+		m.watchDirtyFor = ""
+		reschedule = loadDirectoryCmd(m.startRequest(), m.browser.Path)
+	}
+
+	return m.rememberRecent(msg.Path), tea.Batch(watchDirCmd(m.watch, msg.Path), reschedule)
 }
 
 // applyEntryResolved completes an open attempt whose target turned out to
@@ -324,9 +337,18 @@ func (m *Model) applyDirChanged(msg DirChangedMsg) (tea.Model, tea.Cmd) {
 		return m, listenWatch(m.watch)
 	}
 
-	// Changes outside the browsed directory, or notifications arriving
-	// while a load is already in flight, need no action.
-	if msg.Path != m.browser.Path || m.loading {
+	// Changes outside the browsed directory are stale.
+	if msg.Path != m.browser.Path {
+		return m, listenWatch(m.watch)
+	}
+
+	// While a load is already in flight the notification cannot refresh
+	// anything, but it must not be lost either: the snapshot being fetched
+	// predates the change. Latch it and re-refresh once the load lands.
+	if m.loading {
+		m.watchDirty = true
+		m.watchDirtyFor = msg.Path
+
 		return m, listenWatch(m.watch)
 	}
 
@@ -508,7 +530,7 @@ func (m *Model) handleDisplayKeys(key string) (tea.Model, tea.Cmd) {
 		m.browser.SetShowHidden(!m.browser.ShowHidden())
 		m.clampScroll()
 
-		return m, nil
+		return m, m.afterVisibleChange()
 	case "+", "=":
 		return m.stepZoom(m.zoom.ZoomIn())
 	case "-", "_":

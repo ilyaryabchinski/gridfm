@@ -38,7 +38,10 @@ func main() {
 
 	program := tea.NewProgram(app.New(path, app.Options{Icons: mode}), tea.WithAltScreen())
 
-	_, err = program.Run()
+	final, err := program.Run()
+	if closer, ok := final.(*app.Model); ok {
+		_ = closer.Close() // release the filesystem watcher
+	}
 	if err != nil {
 		fatalf("run: %v", err)
 	}

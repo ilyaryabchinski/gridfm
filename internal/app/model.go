@@ -161,9 +161,12 @@ type Model struct {
 
 	// Filesystem watching. A nil watcher means watching is unavailable and
 	// the app degrades to manual refresh; watchFailed limits the failure
-	// note to one appearance.
-	watch       *watcher.Watcher
-	watchFailed bool
+	// note to one appearance. watchDirty latches a change that arrived
+	// during an in-flight load, so the snapshot is refreshed once more.
+	watch         *watcher.Watcher
+	watchFailed   bool
+	watchDirty    bool
+	watchDirtyFor string
 
 	width     int
 	height    int
@@ -319,6 +322,16 @@ func (m *Model) WatchDirectory(path string) tea.Cmd {
 // is unavailable.
 func (m *Model) ListenWatch() tea.Cmd {
 	return listenWatch(m.watch)
+}
+
+// Close releases long-lived resources: the filesystem watcher and its
+// goroutine. Call it once when the program exits.
+func (m *Model) Close() error {
+	if m.watch == nil {
+		return nil
+	}
+
+	return m.watch.Close()
 }
 
 // LastResult returns the most recent finished operation result, if any.

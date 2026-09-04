@@ -30,12 +30,27 @@ func (m *Model) handleSortKeys(key string) (tea.Model, tea.Cmd) {
 		m.browser.SetSort(mode, order)
 		m.sortOpen = false
 		m.clampScroll()
+
+		return m, m.afterVisibleChange()
 	case "o":
 		m.browser.SetSort(m.browser.SortMode(), m.browser.SortOrder().Opposite())
 		m.clampScroll()
+
+		return m, m.afterVisibleChange()
 	}
 
 	return m, nil
+}
+
+// afterVisibleChange re-derives state that tracks the focused entry after
+// an operation rebuilt the visible list: when such an operation moves
+// focus, the open inspector must follow it.
+func (m *Model) afterVisibleChange() tea.Cmd {
+	if m.inspectorOn {
+		return m.followInspector()
+	}
+
+	return nil
 }
 
 // handleFilterKeys drives the incremental filter input. Editing updates the
@@ -47,9 +62,8 @@ func (m *Model) handleFilterKeys(key string) (tea.Model, tea.Cmd) {
 	case keyEsc:
 		m.filterInput = false
 		m.browser.SetFilter("")
-		m.clampScroll()
 
-		return m, nil
+		return m, m.afterVisibleChange()
 	case keyEnter:
 		m.filterInput = false
 
@@ -62,12 +76,12 @@ func (m *Model) handleFilterKeys(key string) (tea.Model, tea.Cmd) {
 			m.clampScroll()
 		}
 
-		return m, nil
+		return m, m.afterVisibleChange()
 	case "ctrl+u":
 		m.browser.SetFilter("")
 		m.clampScroll()
 
-		return m, nil
+		return m, m.afterVisibleChange()
 	case keyUp, keyDown, keyLeft, keyRight, keyPgUp, keyPgDown, keyHome, keyEnd, keyTab:
 		// Navigation keys are swallowed while typing; the filter keeps
 		// focus where the user left it.
@@ -77,6 +91,8 @@ func (m *Model) handleFilterKeys(key string) (tea.Model, tea.Cmd) {
 	if runes := []rune(key); len(runes) == 1 && runes[0] >= 0x20 && runes[0] != 0x7f {
 		m.browser.SetFilter(m.browser.Filter() + key)
 		m.clampScroll()
+
+		return m, m.afterVisibleChange()
 	}
 
 	return m, nil

@@ -124,7 +124,15 @@ func (w *Watcher) loop() {
 			if !ok {
 				return
 			}
-			if !errors.Is(err, fsnotify.ErrEventOverflow) && !w.send(Event{Path: w.current(), Err: err}) {
+			if errors.Is(err, fsnotify.ErrEventOverflow) {
+				// The kernel dropped events: silence would strand the
+				// consumer with a stale listing. Surface it as a change
+				// hint so the application re-reads the directory.
+				debounce = time.After(w.delay)
+
+				continue
+			}
+			if !w.send(Event{Path: w.current(), Err: err}) {
 				return
 			}
 

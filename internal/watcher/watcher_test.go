@@ -161,3 +161,27 @@ func TestErrorSurfaced(t *testing.T) {
 		t.Fatal("the failure should carry the error")
 	}
 }
+
+// TestOverflowBecomesChangeHint pins the event-overflow contract: dropped
+// kernel events surface as a change notification so the application
+// re-reads the directory instead of trusting a stale listing.
+func TestOverflowBecomesChangeHint(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	notify, err := fsnotify.NewWatcher()
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := newWith(notify, 10*time.Millisecond)
+	defer w.Close()
+	if err := w.Watch(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	notify.Errors <- fsnotify.ErrEventOverflow
+
+	if ev := expectEvent(t, w); ev.Err != nil {
+		t.Fatalf("overflow should degrade to a change hint, got error %v", ev.Err)
+	}
+}
