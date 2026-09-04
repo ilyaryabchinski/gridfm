@@ -360,8 +360,8 @@ func (m *Model) applyDirChanged(msg DirChangedMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleKey applies Milestone 1 keybindings, routed by the active surface:
-// the sort menu overlay, the filter input, the results overlay, or normal
-// browsing.
+// the sort menu overlay, the filter input, the results overlay, the help
+// legend, or normal browsing.
 func (m *Model) handleKey(key string) (tea.Model, tea.Cmd) {
 	switch {
 	case m.input != inputNone:
@@ -372,6 +372,8 @@ func (m *Model) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m.handleConfirmKeys(key)
 	case m.showResults:
 		return m.handleResultsKeys(key)
+	case m.helpOpen:
+		return m.handleHelpKeys(key)
 	case m.sortOpen:
 		return m.handleSortKeys(key)
 	case m.filterInput:
@@ -379,6 +381,17 @@ func (m *Model) handleKey(key string) (tea.Model, tea.Cmd) {
 	}
 
 	return m.handleNormalKeys(key)
+}
+
+// handleHelpKeys drives the keyboard legend: only its close keys act, so
+// hidden grid shortcuts never fire while it is up.
+func (m *Model) handleHelpKeys(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case keyEsc, "?", "q":
+		m.helpOpen = false
+	}
+
+	return m, nil
 }
 
 // handleResultsKeys drives the blocking results overlay: only its close
@@ -562,6 +575,10 @@ func (m *Model) handleDisplayKeys(key string) (tea.Model, tea.Cmd) {
 		// Manual refresh: the fallback when watching is unavailable and
 		// the escape hatch from stale listings in general.
 		return m, loadDirectoryCmd(m.startRequest(), m.browser.Path)
+	case "?":
+		m.helpOpen = true
+
+		return m, nil
 	}
 
 	return m.handleEntryKeys(key)

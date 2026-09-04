@@ -125,9 +125,81 @@ func (m *Model) withOverlay(l ui.Layout, body string) string {
 		return m.renderSortMenu(l)
 	case m.showResults && m.lastResult != nil:
 		return m.renderResultsOverlay(l)
+	case m.helpOpen:
+		return m.renderHelpOverlay(l)
 	}
 
 	return body
+}
+
+// helpColumn renders one titled column of the keyboard legend: rows of key
+// bindings with a fixed-width key field.
+func helpColumn(title string, rows [][2]string) string {
+	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")).
+		Render(" " + title)
+	lines := make([]string, 0, 2+len(rows))
+	lines = append(lines, header)
+	for _, row := range rows {
+		lines = append(lines,
+			lipgloss.NewStyle().Faint(true).Render(fmt.Sprintf(" %-13s", row[0]))+row[1])
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+// renderHelpOverlay centers the keyboard legend: every binding the
+// application answers to, in two columns so it fits a normal terminal.
+func (m *Model) renderHelpOverlay(l ui.Layout) string {
+	navigate := helpColumn("navigate", [][2]string{
+		{"arrows h j k l", "move"},
+		{"enter / o", "open"},
+		{"backspace", "parent dir"},
+		{"alt+left/right", "history"},
+		{"pgup / pgdn", "page"},
+		{"home / end", "first/last"},
+		{"tab", "focus pane"},
+		{"~", "sidebar"},
+	})
+	view := helpColumn("view", [][2]string{
+		{"/", "filter"},
+		{".", "hidden files"},
+		{"s", "sort menu"},
+		{"+ / -", "card size"},
+		{"i", "inspector"},
+		{"r", "refresh"},
+	})
+	act := helpColumn("select + files", [][2]string{
+		{"space", "toggle select"},
+		{"v", "range mode"},
+		{"ctrl+a", "select all"},
+		{"y / x", "stage copy/move"},
+		{"p", "paste"},
+		{"n / ctrl+d", "new file/dir"},
+		{"R", "rename"},
+		{"d / D", "trash / delete"},
+		{"b / B", "bookmark add/del"},
+	})
+	jobs := helpColumn("operations", [][2]string{
+		{"c", "cancel job"},
+		{"e", "last result"},
+		{"esc", "clear / close"},
+		{"?", "this legend"},
+		{"q", "quit"},
+	})
+
+	left := lipgloss.JoinVertical(lipgloss.Left, navigate, "", view)
+	right := lipgloss.JoinVertical(lipgloss.Left, act, "", jobs)
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("8")).
+		Padding(0, 1).
+		Render(lipgloss.JoinVertical(lipgloss.Left,
+			lipgloss.NewStyle().Bold(true).Render(" keys · esc closes"),
+			"",
+			lipgloss.JoinHorizontal(lipgloss.Top, left, "   ", right)))
+
+	return lipgloss.Place(l.ContentWidth, max(l.ContentHeight, 1), lipgloss.Center, lipgloss.Center, box)
 }
 
 // statusInfo assembles the status bar contents for the current state.

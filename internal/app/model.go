@@ -151,6 +151,9 @@ type Model struct {
 	// Results overlay state.
 	showResults bool
 
+	// Help overlay state: the keyboard legend.
+	helpOpen bool
+
 	// Inspector panel state. The request id rejects stale loads; the panel
 	// content clears the moment focus moves elsewhere.
 	inspectorOn   bool
