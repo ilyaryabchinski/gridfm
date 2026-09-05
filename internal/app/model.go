@@ -73,12 +73,24 @@ const (
 	confirmQuit
 )
 
-// Options are the start-up configuration switches.
+// Options are the start-up configuration switches, already resolved:
+// config defaults layered with command-line flags.
 type Options struct {
 	Icons ui.IconMode
 	// Images is the user's terminal-graphics preference; it is resolved
 	// against the environment at start-up.
 	Images graphics.Mode
+	// Sidebar shows the sidebar at start; nil means the default (shown).
+	Sidebar *bool
+	// Inspector opens the inspector panel at start; nil means the
+	// default (hidden).
+	Inspector *bool
+	// ShowHidden starts with dot-prefixed entries visible.
+	ShowHidden bool
+	// Sort and Order set the initial ordering; empty means the
+	// browser's built-in name-ascending default.
+	Sort  string
+	Order string
 }
 
 // pendingQuestion holds an open conflict question from the operation
@@ -207,17 +219,45 @@ func New(startPath string, opts Options) *Model {
 	// gets the plain icon rendering.
 	proto, _ := graphics.Resolve(opts.Images, os.Getenv)
 
+	b := browser.New(startPath)
+	b.SetShowHidden(opts.ShowHidden)
+	if opts.Sort != "" {
+		mode := browser.SortByName
+		switch opts.Sort {
+		case "size":
+			mode = browser.SortBySize
+		case "modified":
+			mode = browser.SortByModified
+		case "type":
+			mode = browser.SortByType
+		}
+		order := browser.SortAscending
+		if opts.Order == "desc" {
+			order = browser.SortDescending
+		}
+		b.SetSort(mode, order)
+	}
+
+	showSidebar, showInspector := true, false
+	if opts.Sidebar != nil {
+		showSidebar = *opts.Sidebar
+	}
+	if opts.Inspector != nil {
+		showInspector = *opts.Inspector
+	}
+
 	return &Model{
-		browser:    browser.New(startPath),
-		icons:      opts.Icons,
-		images:     proto,
-		thumbReady: map[string][]byte{},
-		zoom:       ui.ZoomNormal,
-		sidebarOn:  true,
-		requestID:  1,
-		loading:    true,
-		ops:        operations.NewManager(),
-		watch:      w,
+		browser:     b,
+		icons:       opts.Icons,
+		images:      proto,
+		thumbReady:  map[string][]byte{},
+		zoom:        ui.ZoomNormal,
+		sidebarOn:   showSidebar,
+		inspectorOn: showInspector,
+		requestID:   1,
+		loading:     true,
+		ops:         operations.NewManager(),
+		watch:       w,
 	}
 }
 
@@ -331,6 +371,9 @@ func (m *Model) EnqueueOperation(op operations.Operation) error {
 }
 
 // Inspector accessor methods for tests and status rendering.
+
+// SidebarOn reports whether the sidebar is toggled open.
+func (m *Model) SidebarOn() bool { return m.sidebarOn }
 
 // InspectorOn reports whether the inspector panel is toggled open.
 func (m *Model) InspectorOn() bool { return m.inspectorOn }
