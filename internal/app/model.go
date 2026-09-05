@@ -25,6 +25,9 @@ type Region int
 const (
 	RegionGrid Region = iota
 	RegionSidebar
+	// RegionInspector is hit-test only: the inspector panel is never a
+	// keyboard focus region, but the mouse can address it.
+	RegionInspector
 )
 
 // Mode is the browsing mode: normal navigation or range selection.

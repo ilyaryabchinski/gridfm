@@ -368,11 +368,15 @@ func (m *Model) followInspector() tea.Cmd {
 // clearing the panel. It runs after every applied directory refresh: a
 // file edited, replaced (even with a preserved mtime), chmod'ed, or
 // chown'ed under the same name must not leave stale metadata on screen.
+// The tracked path moves with the request — a refresh can change which
+// entry focus lands on, and a stale inspectorPath would later suppress
+// the inspection when the user returns to the previously shown file.
 // The fresh result replaces the old content only when it lands. When the
 // refreshed directory has no focused entry anymore — the file was
 // removed — the panel is invalid and is cleared instead.
 func (m *Model) refreshInspector() tea.Cmd {
-	if _, ok := m.browser.Focused(); !ok {
+	entry, ok := m.browser.Focused()
+	if !ok {
 		// The focused entry is gone. Clearing the panel is not enough:
 		// an inspect already in flight for the removed file would land
 		// and resurrect its metadata, so the request id must move too.
@@ -385,8 +389,9 @@ func (m *Model) refreshInspector() tea.Cmd {
 	}
 
 	m.inspectorReq++
+	m.inspectorPath = entry.Path
 
-	return inspectCmd(m.inspectorReq, m.browser.FocusedPath())
+	return inspectCmd(m.inspectorReq, entry.Path)
 }
 
 // applyInspectorLoaded applies one inspector load, rejecting results that

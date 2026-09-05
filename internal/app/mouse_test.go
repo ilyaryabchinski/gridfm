@@ -179,6 +179,59 @@ func TestMouseWheelScrollsFreely(t *testing.T) {
 	if strings.Contains(m.View(), "entry-28.txt") {
 		t.Error("the view must not scroll past the first row")
 	}
+
+	// A gap between cards belongs to the grid: the wheel still scrolls.
+	m = mouseModel(t, 30)
+	next, _ = m.Update(wheelAt(true, 15, 3)) // the gap between cards one and two
+	m = next.(*app.Model)
+	if !strings.Contains(m.View(), "entry-28.txt") {
+		t.Error("wheel over a gap must still scroll the grid")
+	}
+}
+
+// TestMouseWheelScrollsOnlyTheGrid pins that the wheel scrolls the region
+// under the pointer: over the docked sidebar or inspector the grid stays
+// put, matching the plan's mouse contract.
+func TestMouseWheelScrollsOnlyTheGrid(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	m := app.New(root, app.Options{Mouse: true})
+	m = resize(t, m, 120, 30)
+	m = loaded(t, m, 1, root, entriesAt(root, 30), nil)
+	next, _ := m.Update(wheelAt(true, 40, 5)) // over the grid: baseline scroll
+	m = next.(*app.Model)
+	gridAfterBaseline := m.View()
+
+	// Over the docked sidebar: no scroll.
+	next, _ = m.Update(wheelAt(true, 3, 10))
+	m = next.(*app.Model)
+	if m.View() != gridAfterBaseline {
+		t.Error("wheel over the sidebar must not scroll the grid")
+	}
+
+	// Over the docked inspector: no scroll.
+	next, _ = m.Update(wheelAt(true, 110, 5))
+	m = next.(*app.Model)
+	if m.View() != gridAfterBaseline {
+		t.Error("wheel over the inspector must not scroll the grid")
+	}
+
+	// Header row: not the grid.
+	next, _ = m.Update(wheelAt(true, 40, 0))
+	m = next.(*app.Model)
+	if m.View() != gridAfterBaseline {
+		t.Error("wheel over the header must not scroll the grid")
+	}
+}
+
+func wheelAt(down bool, x, y int) tea.MouseMsg {
+	b := tea.MouseButtonWheelUp
+	if down {
+		b = tea.MouseButtonWheelDown
+	}
+
+	return tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: b}
 }
 
 // TestMouseSidebarClickSelectsPlace pins that clicking the docked sidebar

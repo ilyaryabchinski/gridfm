@@ -34,21 +34,65 @@ func (m *Model) applyMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if ev.Action == tea.MouseActionPress {
 		switch ev.Button {
 		case tea.MouseButtonWheelUp:
-			m.scrollRow--
-			m.clampScrollBounds()
-
-			return m, nil
+			return m.wheel(ev, -1)
 		case tea.MouseButtonWheelDown:
-			m.scrollRow++
-			m.clampScrollBounds()
-
-			return m, nil
+			return m.wheel(ev, 1)
 		case tea.MouseButtonLeft:
 			return m.mouseLeftClick(ev)
 		}
 	}
 
 	return m, nil
+}
+
+// wheel scrolls the region under the pointer: the grid viewport. Panels
+// without scroll state — sidebar, inspector — and events outside the
+// grid do nothing; a pointer in a gap between cards still scrolls the
+// grid, because the gap belongs to the grid region.
+func (m *Model) wheel(ev tea.MouseEvent, dir int) (tea.Model, tea.Cmd) {
+	if m.regionAt(m.layout(), ev.X, ev.Y) != RegionGrid {
+		return m, nil
+	}
+
+	m.scrollRow += dir
+	m.clampScrollBounds()
+
+	return m, nil
+}
+
+// regionAt reports which region owns a coordinate without requiring a
+// hit on an item: gaps between cards still belong to the grid.
+func (m *Model) regionAt(l ui.Layout, x, y int) Region {
+	if !l.Usable || m.loading || m.loadErr != nil || m.overlaysOpen() {
+		return RegionGrid
+	}
+
+	// Floating panels own their rectangles, like in hitTest.
+	if m.sidebarOn && !l.SidebarVisible {
+		if x < min(ui.SidebarWidth, l.ContentWidth) {
+			return RegionSidebar
+		}
+	}
+	if m.inspectorOn && l.InspectorWidth == 0 {
+		w := min(ui.InspectorWidth, l.ContentWidth)
+		if x >= l.ContentWidth-w {
+			return RegionInspector
+		}
+	}
+
+	if l.SidebarVisible && x < l.SidebarWidth {
+		return RegionSidebar
+	}
+
+	gridX := 0
+	if l.SidebarVisible {
+		gridX = l.SidebarWidth
+	}
+	if y >= 1 && x >= gridX {
+		return RegionGrid
+	}
+
+	return RegionGrid
 }
 
 // mouseLeftClick focuses whatever sits under the pointer; ctrl-click

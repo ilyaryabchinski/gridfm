@@ -99,3 +99,64 @@ func TestInspectorSuccessClearsPriorError(t *testing.T) {
 		t.Fatalf("panel = %+v, want the fresh metadata", m.Inspector())
 	}
 }
+
+// TestInspectorTracksWithRefreshedFocus pins the tracked-path contract:
+// a refresh that lands focus on a different entry must move
+// inspectorPath with the request. Otherwise returning to the previously
+// shown file suppresses its inspection and the panel keeps displaying
+// the other file.
+func TestInspectorTracksWithRefreshedFocus(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	a := filepath.Join(root, "a.txt")
+	b := filepath.Join(root, "b.txt")
+
+	m := gridOnly(t, resize(t, app.New(root, app.Options{}), 120, 30))
+	// Focus starts at index 0: A.
+	m = loaded(t, m, 1, root, []browser.Entry{
+		{Name: "a.txt", Path: a},
+		{Name: "b.txt", Path: b},
+	}, nil)
+
+	m, _ = pressI(t, m)
+	m = feed(t, m, app.InspectorLoadedMsg{
+		RequestID: m.InspectorRequestID(), Path: a,
+		Info: &preview.Info{Path: a, Name: "a.txt", Size: 1},
+	})
+
+	// Refresh with A gone from the listing: focus index 0 is now B. The
+	// background request must retarget the tracked path to B.
+	m = feed(t, m, app.DirectoryLoadedMsg{RequestID: 1, Path: root, Entries: []browser.Entry{
+		{Name: "b.txt", Path: b},
+	}})
+	m = feed(t, m, app.InspectorLoadedMsg{
+		RequestID: m.InspectorRequestID(), Path: b,
+		Info: &preview.Info{Path: b, Name: "b.txt", Size: 7},
+	})
+	if m.Inspector() == nil || m.Inspector().Size != 7 {
+		t.Fatalf("panel = %+v, want B's fresh metadata", m.Inspector())
+	}
+
+	// A comes back. Focus preservation keeps focus on B (the previously
+	// focused path), so move back to A: the panel must follow with a
+	// fresh request for A — inspectorPath must have moved to B during
+	// the refresh, otherwise this movement is suppressed as "already
+	// showing A".
+	next, cmd := m.Update(app.DirectoryLoadedMsg{RequestID: 1, Path: root, Entries: []browser.Entry{
+		{Name: "a.txt", Path: a},
+		{Name: "b.txt", Path: b},
+	}})
+	m = next.(*app.Model)
+
+	next, cmd = m.Update(keyMsg("h")) // focus moves left, back to a.txt
+	var asked bool
+	for _, msg := range runBatch(t, cmd) {
+		if loaded, ok := msg.(app.InspectorLoadedMsg); ok && loaded.Path == a {
+			asked = true
+		}
+	}
+	if !asked {
+		t.Fatal("returning to a previously shown file must re-request its metadata")
+	}
+}

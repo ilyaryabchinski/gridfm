@@ -16,11 +16,11 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
-          # The config is golangci-lint v2 format; the action's default
-          # linter is the 1.x series, which rejects it.
-          version: v2.1
+          # v7+ of the action supports the v2 linter series only; v2.13
+          # is the current release line, compatible with modern Go.
+          version: v2.13
           args: --timeout 5m
       - name: Test
         run: go test -race -timeout 10m ./...

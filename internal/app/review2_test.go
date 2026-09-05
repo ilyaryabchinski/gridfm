@@ -22,11 +22,10 @@ func runBatch(t *testing.T, cmd tea.Cmd) []tea.Msg {
 	var msgs []tea.Msg
 	switch msg := cmd().(type) {
 	case tea.BatchMsg:
+		// Batches nest: Bubble Tea's Batch does not flatten its
+		// children, so recurse to reach every command.
 		for _, c := range msg {
-			if c == nil {
-				continue
-			}
-			msgs = append(msgs, c())
+			msgs = append(msgs, runBatch(t, c)...)
 		}
 	default:
 		msgs = append(msgs, msg)
