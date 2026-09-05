@@ -40,6 +40,8 @@ type Config struct {
 	// Theme overrides palette colors by role or category name; values
 	// are ANSI 0-255 or #hex and are validated by the UI layer.
 	Theme map[string]string `toml:"theme"`
+	// Mouse enables mouse clicks and wheel scrolling.
+	Mouse bool `toml:"mouse"`
 }
 
 // Path returns the configuration file location: $XDG_CONFIG_HOME, then
@@ -125,6 +127,8 @@ type Resolved struct {
 	Keys Keymap
 	// Theme carries raw color overrides for the UI layer to interpret.
 	Theme map[string]string
+	// Mouse mirrors the resolved mouse preference.
+	Mouse bool
 }
 
 // Resolve applies defaults to every unset field.
@@ -158,6 +162,7 @@ func (c Config) Resolve() Resolved {
 	}
 	r.Keys = c.Keys
 	r.Theme = c.Theme
+	r.Mouse = c.Mouse
 
 	return r
 }

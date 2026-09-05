@@ -4,6 +4,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"gridfm/internal/browser"
 	"gridfm/internal/config"
@@ -96,6 +97,9 @@ type Options struct {
 	Keys config.Keymap
 	// Theme installs a color palette; nil keeps the default theme.
 	Theme *ui.Theme
+	// Mouse enables mouse click and wheel support. Opt-in: capture
+	// steals the terminal's text selection.
+	Mouse bool
 }
 
 // pendingQuestion holds an open conflict question from the operation
@@ -188,6 +192,13 @@ type Model struct {
 	// binds maps keys to actions, honoring the user's remapping.
 	binds *keybinds
 
+	// Mouse support: opt-in because capture steals terminal text
+	// selection. lastClick* detects double clicks.
+	mouseOn     bool
+	lastClickAt time.Time
+	lastClickX  int
+	lastClickY  int
+
 	// Inspector panel state. The request id rejects stale loads; the panel
 	// content clears the moment focus moves elsewhere.
 	inspectorOn   bool
@@ -263,6 +274,7 @@ func New(startPath string, opts Options) *Model {
 		images:      proto,
 		thumbReady:  map[string][]byte{},
 		binds:       newKeybinds(opts.Keys),
+		mouseOn:     opts.Mouse,
 		zoom:        ui.ZoomNormal,
 		sidebarOn:   showSidebar,
 		inspectorOn: showInspector,
@@ -347,6 +359,9 @@ func (m *Model) Region() Region { return m.region }
 
 // PlaceCount returns the number of discovered sidebar places.
 func (m *Model) PlaceCount() int { return len(m.places) }
+
+// PlaceIdx returns the selected sidebar item index.
+func (m *Model) PlaceIdx() int { return m.placeIdx }
 
 // SelectedPlace returns the sidebar entry under the cursor.
 func (m *Model) SelectedPlace() (places.Place, bool) {

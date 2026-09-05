@@ -117,6 +117,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		return m.handleKeyMsg(msg)
+
+	case tea.MouseMsg:
+		return m.applyMouse(msg)
 	}
 
 	return m, nil

@@ -64,6 +64,8 @@ func main() {
 	hidden := flag.Bool("hidden", cfg.ShowHidden, "show dot-prefixed entries")
 	sortBy := flag.String("sort", cfg.Sort, "initial sort: name, size, modified, or type")
 	order := flag.String("order", cfg.Order, "initial sort direction: asc or desc")
+	mouse := flag.Bool("mouse", cfg.Mouse, "enable mouse clicks and wheel scrolling "+
+		"(captures the pointer, disabling terminal text selection)")
 
 	flag.Parse()
 
@@ -109,8 +111,14 @@ func main() {
 		Order:      *order,
 		Keys:       cfg.Keys,
 		Theme:      &theme,
+		Mouse:      *mouse,
 	})
-	program := tea.NewProgram(model, tea.WithAltScreen())
+
+	opts := []tea.ProgramOption{tea.WithAltScreen()}
+	if *mouse {
+		opts = append(opts, tea.WithMouseCellMotion())
+	}
+	program := tea.NewProgram(model, opts...)
 
 	// Thumbnails ride on a side goroutine: placements go to the terminal
 	// outside the render loop, generation results come back as messages.
