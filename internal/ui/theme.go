@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -118,25 +119,28 @@ func validColor(value string) error {
 	return nil
 }
 
-// current is the active palette. The app installs the user's theme once
-// at start-up; rendering reads it. This is process-wide presentation
-// state, like the color profile itself.
-var current = DefaultTheme()
+// current is the active palette, replaced atomically: rendering runs on
+// its own goroutine while tests install themes concurrently.
+var current atomic.Pointer[Theme]
+
+func init() {
+	def := DefaultTheme()
+	current.Store(&def)
+}
 
 // SetTheme installs the palette used by all rendering.
 func SetTheme(t Theme) {
-	if t.Categories != nil {
-		current = t
-
-		return
+	if t.Categories == nil {
+		// A theme without categories keeps the default category colors.
+		t.Categories = DefaultTheme().Categories
 	}
-	// A theme without categories keeps the default category colors.
-	t.Categories = DefaultTheme().Categories
-	current = t
+	current.Store(&t)
 }
 
 // CurrentTheme returns the active palette.
-func CurrentTheme() Theme { return current }
+func CurrentTheme() Theme { return *current.Load() }
 
 // CategoryColor returns the active color for a file-type category.
-func CategoryColor(c Category) lipgloss.Color { return current.Categories[c] }
+func CategoryColor(c Category) lipgloss.Color {
+	return CurrentTheme().Categories[c]
+}
