@@ -1,10 +1,12 @@
 package app
 
 import (
+	"os"
 	"strconv"
 	"strings"
 
 	"gridfm/internal/browser"
+	"gridfm/internal/graphics"
 	"gridfm/internal/operations"
 	"gridfm/internal/places"
 	"gridfm/internal/preview"
@@ -74,6 +76,9 @@ const (
 // Options are the start-up configuration switches.
 type Options struct {
 	Icons ui.IconMode
+	// Images is the user's terminal-graphics preference; it is resolved
+	// against the environment at start-up.
+	Images graphics.Mode
 }
 
 // pendingQuestion holds an open conflict question from the operation
@@ -107,7 +112,10 @@ type Model struct {
 	mounts    []places.Place
 	recents   []places.Place
 
-	icons     ui.IconMode
+	icons ui.IconMode
+	// images is the resolved graphics protocol, empty when thumbnails are
+	// unavailable or disabled.
+	images    graphics.Protocol
 	zoom      ui.ZoomLevel
 	region    Region
 	sidebarOn bool
@@ -189,9 +197,14 @@ func New(startPath string, opts Options) *Model {
 	// with manual refresh only.
 	w, _ := watcher.New()
 
+	// Thumbnails are an enhancement: an unsupported or disabled terminal
+	// gets the plain icon rendering.
+	proto, _ := graphics.Resolve(opts.Images, os.Getenv)
+
 	return &Model{
 		browser:   browser.New(startPath),
 		icons:     opts.Icons,
+		images:    proto,
 		zoom:      ui.ZoomNormal,
 		sidebarOn: true,
 		requestID: 1,
@@ -231,6 +244,12 @@ func (m *Model) LoadError() error { return m.loadErr }
 
 // Zoom returns the current zoom level.
 func (m *Model) Zoom() ui.ZoomLevel { return m.zoom }
+
+// ImageProtocol reports the resolved terminal graphics protocol and
+// whether thumbnails may be drawn at all.
+func (m *Model) ImageProtocol() (graphics.Protocol, bool) {
+	return m.images, m.images != ""
+}
 
 // SortMode and SortOrder expose the active ordering for tests and status.
 func (m *Model) SortMode() browser.SortMode { return m.browser.SortMode() }

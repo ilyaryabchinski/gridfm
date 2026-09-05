@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"gridfm/internal/app"
+	"gridfm/internal/graphics"
 	"gridfm/internal/ui"
 )
 
@@ -18,6 +19,9 @@ func main() {
 	icons := flag.String("icons", ui.IconModeUnicode.String(),
 		"file type representation: labels, unicode, or nerdfont "+
 			"(nerdfont needs a patched font; use labels if glyphs render wrong)")
+	images := flag.String("images", "auto",
+		"terminal image thumbnails: auto, on, or off "+
+			"(auto enables them on kitty, foot, and ghostty; on forces them even in multiplexers)")
 
 	flag.Parse()
 
@@ -31,12 +35,17 @@ func main() {
 		fatalf("%v (want labels, unicode, or nerdfont)", err)
 	}
 
+	imageMode, err := graphics.ParseMode(*images)
+	if err != nil {
+		fatalf("%v", err)
+	}
+
 	path, err := filepath.Abs(start)
 	if err != nil {
 		fatalf("resolve start location: %v", err)
 	}
 
-	program := tea.NewProgram(app.New(path, app.Options{Icons: mode}), tea.WithAltScreen())
+	program := tea.NewProgram(app.New(path, app.Options{Icons: mode, Images: imageMode}), tea.WithAltScreen())
 
 	final, err := program.Run()
 	if closer, ok := final.(*app.Model); ok {
