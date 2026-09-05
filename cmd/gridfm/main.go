@@ -66,8 +66,20 @@ func main() {
 	order := flag.String("order", cfg.Order, "initial sort direction: asc or desc")
 	mouse := flag.Bool("mouse", cfg.Mouse, "enable mouse clicks and wheel scrolling "+
 		"(captures the pointer, disabling terminal text selection)")
+	completions := flag.String("completions", "",
+		"print a shell completion script: bash, zsh, or fish")
 
 	flag.Parse()
+
+	if *completions != "" {
+		script, err := completionFor(*completions)
+		if err != nil {
+			fatalf("%v", err)
+		}
+		fmt.Print(script)
+
+		return
+	}
 
 	start := "."
 	if flag.NArg() > 0 {
