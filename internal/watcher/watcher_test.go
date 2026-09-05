@@ -144,6 +144,68 @@ func TestWatchSwitchOnAliasKeepsEvents(t *testing.T) {
 	}
 }
 
+// TestWatchSurvivesMultipleAliases pins the registration contract across
+// chained aliases: fsnotify keeps labeling events with the path the watch
+// was first registered under, so the filter must accept that spelling no
+// matter how many aliases the browser has moved through. Moving to an
+// unrelated directory afterwards must remove the original watch, not a
+// never-registered alias.
+func TestWatchSurvivesMultipleAliases(t *testing.T) {
+	t.Parallel()
+
+	real := t.TempDir()
+	alias1 := filepath.Join(t.TempDir(), "alias1")
+	alias2 := filepath.Join(t.TempDir(), "alias2")
+	if err := os.Symlink(real, alias1); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, alias2); err != nil {
+		t.Fatal(err)
+	}
+	other := t.TempDir()
+
+	w, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	if err := w.Watch(real); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Watch(alias1); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Watch(alias2); err != nil {
+		t.Fatal(err)
+	}
+
+	// fsnotify labels events with the registration spelling (real), so a
+	// write must still surface even though only aliases were browsed since.
+	if err := os.WriteFile(filepath.Join(real, "deep-alias"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if ev := expectEvent(t, w); ev.Path != alias2 {
+		t.Fatalf("event path = %q, want the browsed %q", ev.Path, alias2)
+	}
+
+	// The switch away must remove the original registration: afterwards,
+	// writes to the abandoned directory produce nothing at all.
+	if err := w.Watch(other); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(real, "abandoned"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	expectSilence(t, w)
+
+	if err := os.WriteFile(filepath.Join(other, "current"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if ev := expectEvent(t, w); ev.Path != other {
+		t.Fatalf("event path = %q, want %q", ev.Path, other)
+	}
+}
+
 func TestSameWatchIsIdempotent(t *testing.T) {
 	t.Parallel()
 

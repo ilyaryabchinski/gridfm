@@ -52,16 +52,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case DirectoryLoadedMsg:
-		save, watch := m.applyDirectoryLoaded(msg)
+		applied, save, watch := m.applyDirectoryLoaded(msg)
 
-		// The refreshed listing may have moved focus to a different entry,
-		// or changed the focused entry on disk under the same name; the
-		// inspector follows either when open. The watcher only moves for
-		// results that actually applied: a stale or failed load must never
-		// re-point it away from the browsed directory.
+		// The watcher only moves for results that actually applied: a
+		// stale or failed load must never re-point it away from the
+		// browsed directory. The inspector likewise refreshes only on
+		// applied loads — a rejected result carries no information about
+		// the focused entry and must not clear the panel.
 		cmds := tea.Batch(save, watch)
-		if m.inspectorOn {
-			return m, tea.Batch(cmds, m.followInspectorAfterLoad(msg.Entries))
+		if applied && m.inspectorOn {
+			return m, tea.Batch(cmds, m.refreshInspector())
 		}
 
 		return m, cmds
@@ -192,14 +192,14 @@ func itoaPlural(n int, word string) string {
 	return plain + "s"
 }
 
-// applyDirectoryLoaded applies a directory load. It reports the command
-// persisting the new recent location and the command re-pointing the
-// watcher: the watcher follows only genuinely applied results, and a
-// failed load keeps it on the still-current browsed directory. Stale
-// results return nil for both.
-func (m *Model) applyDirectoryLoaded(msg DirectoryLoadedMsg) (tea.Cmd, tea.Cmd) {
+// applyDirectoryLoaded applies a directory load. It reports whether the
+// result genuinely applied, the command persisting the new recent
+// location, and the command re-pointing the watcher: the watcher follows
+// only genuinely applied results, and a failed load keeps it on the
+// still-current browsed directory. Stale results return false for both.
+func (m *Model) applyDirectoryLoaded(msg DirectoryLoadedMsg) (bool, tea.Cmd, tea.Cmd) {
 	if msg.RequestID != m.requestID {
-		return nil, nil // stale result from a superseded request
+		return false, nil, nil // stale result from a superseded request
 	}
 
 	m.loading = false
@@ -213,7 +213,7 @@ func (m *Model) applyDirectoryLoaded(msg DirectoryLoadedMsg) (tea.Cmd, tea.Cmd) 
 		// note so failed navigation is never silent.
 		m.note = "error: " + msg.Err.Error()
 
-		return nil, watchDirCmd(m.watch, m.browser.Path)
+		return false, nil, watchDirCmd(m.watch, m.browser.Path)
 	}
 
 	// Recovering from a failed load: its error note must not outlive the
@@ -237,7 +237,7 @@ func (m *Model) applyDirectoryLoaded(msg DirectoryLoadedMsg) (tea.Cmd, tea.Cmd) 
 		reschedule = loadDirectoryCmd(m.startRequest(), m.browser.Path)
 	}
 
-	return m.rememberRecent(msg.Path), tea.Batch(watchDirCmd(m.watch, msg.Path), reschedule)
+	return true, m.rememberRecent(msg.Path), tea.Batch(watchDirCmd(m.watch, msg.Path), reschedule)
 }
 
 // applyEntryResolved completes an open attempt whose target turned out to
@@ -315,27 +315,19 @@ func (m *Model) followInspector() tea.Cmd {
 	return m.requestInspector()
 }
 
-// followInspectorAfterLoad re-requests the panel after an applied
-// directory refresh. Besides focus movement, a refresh that changed the
-// focused entry on disk — an edit, a replace, new metadata — must refresh
-// the panel even when the name, and therefore the focus path, stayed the
-// same.
-func (m *Model) followInspectorAfterLoad(entries []browser.Entry) tea.Cmd {
-	p := m.browser.FocusedPath()
-	if p == m.inspectorPath && m.inspector != nil {
-		for _, e := range entries {
-			if e.Path != p {
-				continue
-			}
-			if e.ModTime.Equal(m.inspector.ModTime) {
-				return nil // same entry, unchanged on disk
-			}
-
-			break
-		}
+// refreshInspector re-requests metadata for the focused entry without
+// clearing the panel. It runs after every applied directory refresh: a
+// file edited, replaced (even with a preserved mtime), chmod'ed, or
+// chown'ed under the same name must not leave stale metadata on screen.
+// The fresh result replaces the old content only when it lands.
+func (m *Model) refreshInspector() tea.Cmd {
+	if _, ok := m.browser.Focused(); !ok {
+		return nil
 	}
 
-	return m.requestInspector()
+	m.inspectorReq++
+
+	return inspectCmd(m.inspectorReq, m.browser.FocusedPath())
 }
 
 // applyInspectorLoaded applies one inspector load, rejecting results that

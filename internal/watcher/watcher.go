@@ -30,13 +30,14 @@ type Event struct {
 type Watcher struct {
 	delay time.Duration
 
-	mu   sync.Mutex
-	path string
-	// prev is the previous path when the current watch was reached through
-	// a directory alias: the shared inotify watch may still report event
-	// paths under the old spelling.
-	prev   string
-	notify *fsnotify.Watcher
+	mu sync.Mutex
+	// path is the browsed directory the application sees; registered is
+	// the spelling the inotify watch was actually registered under. They
+	// diverge when the watch is reached through directory aliases, because
+	// fsnotify keeps labeling events with the registered path.
+	path       string
+	registered string
+	notify     *fsnotify.Watcher
 
 	events chan Event
 	stop   chan struct{}
@@ -74,7 +75,10 @@ func (w *Watcher) Events() <-chan Event { return w.events }
 // Watch switches the watch to path. Events outside the current path are
 // dropped, and the switch itself never produces a notification. The switch
 // commits only after the underlying watch succeeds, so a failed Add leaves
-// the previous path watching and a retry honestly fails again.
+// the previous path watching and a retry honestly fails again. Switching
+// between aliases of the same directory keeps the existing registration:
+// re-adding would share or duplicate the inotify watch, and removing the
+// registered path would kill it, so only the browsed spelling moves.
 func (w *Watcher) Watch(path string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -83,26 +87,20 @@ func (w *Watcher) Watch(path string) error {
 		return nil
 	}
 
-	if err := w.notify.Add(path); err != nil {
-		return err
-	}
-
-	previous := w.path
-	if previous != "" && sameDirectory(previous, path) {
-		// On Linux an alias of the watched directory reuses the same
-		// inotify watch descriptor, so removing the previous path would
-		// kill the shared watch. Keep it and remember the old spelling:
-		// events may still arrive labeled under it.
-		w.prev = previous
+	if w.registered != "" && sameDirectory(w.registered, path) {
 		w.path = path
 
 		return nil
 	}
 
-	if previous != "" {
-		_ = w.notify.Remove(previous)
+	if err := w.notify.Add(path); err != nil {
+		return err
 	}
-	w.prev = ""
+
+	if w.registered != "" {
+		_ = w.notify.Remove(w.registered)
+	}
+	w.registered = path
 	w.path = path
 
 	return nil
@@ -193,24 +191,29 @@ func (w *Watcher) current() string {
 }
 
 // watches reports whether a raw event's path belongs to the watched
-// directory, accepting the previous spelling while the watch was reached
-// through a directory alias.
+// directory. fsnotify labels events with the path the watch was registered
+// under, which diverges from the browsed path when the directory is
+// reached through aliases, so both spellings are accepted.
 func (w *Watcher) watches(name string) bool {
 	cur := w.current()
 	if cur == "" {
 		return false
 	}
-	if dir := filepath.Dir(name); dir == cur || name == cur {
-		return true
-	}
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.prev == "" {
-		return false
+
+	dir := filepath.Dir(name)
+	for _, p := range []string{w.registered, w.path} {
+		if p == "" {
+			continue
+		}
+		if dir == p || name == p {
+			return true
+		}
 	}
 
-	return filepath.Dir(name) == w.prev || name == w.prev
+	return false
 }
 
 // send delivers one event unless the watcher stopped or the consumer went
