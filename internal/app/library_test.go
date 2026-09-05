@@ -155,7 +155,7 @@ func TestPlacesMessagePopulatesAllSections(t *testing.T) {
 	}
 
 	// The cursor navigates the combined list end to end.
-	m = feed(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")})
+	m = feed(t, m, keyMsg("tab"))
 	for range 2 {
 		m = press(t, m, "j")
 	}

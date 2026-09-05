@@ -104,10 +104,32 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.applyOperationEvent(msg.Event)
 
 	case tea.KeyMsg:
-		return m.handleKey(msg.String())
+		return m.handleKeyMsg(msg)
 	}
 
 	return m, nil
+}
+
+// handleKeyMsg routes one key message. A fast burst of presses arrives as
+// a single multi-rune key message — the terminal delivers the bytes in one
+// read and Bubble Tea groups them — so each rune is replayed as its own
+// keypress; otherwise a double-tapped q, a run of jjj, or a quickly typed
+// confirmation word is dropped as an unknown key. Only bracketed pastes
+// (Paste set) stay opaque: they are text, not repeated keys.
+func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Paste || len(msg.Runes) <= 1 {
+		return m.handleKey(msg.String())
+	}
+
+	var (
+		cur tea.Model = m
+		cmd tea.Cmd
+	)
+	for _, r := range msg.Runes {
+		cur, cmd = cur.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}, Alt: msg.Alt})
+	}
+
+	return cur, cmd
 }
 
 // applyOperationEvent consumes one operation manager event and re-arms the

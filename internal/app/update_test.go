@@ -33,10 +33,43 @@ func feed(t *testing.T, m tea.Model, msg tea.Msg) *app.Model {
 	return updated
 }
 
+// namedKeyTypes maps a key's string vocabulary to the key type a real
+// terminal reports for it: named keys are structurally different from
+// rune keys, and the helper must not smuggle them through as runes — a
+// typed burst of t,a,b arrives as one rune message whose text happens to
+// be "tab", and only the type distinguishes them.
+var namedKeyTypes = map[string]tea.KeyType{
+	"enter":     tea.KeyEnter,
+	"esc":       tea.KeyEsc,
+	"tab":       tea.KeyTab,
+	"backspace": tea.KeyBackspace,
+	"up":        tea.KeyUp,
+	"down":      tea.KeyDown,
+	"left":      tea.KeyLeft,
+	"right":     tea.KeyRight,
+	"home":      tea.KeyHome,
+	"end":       tea.KeyEnd,
+	"pgup":      tea.KeyPgUp,
+	"pgdown":    tea.KeyPgDown,
+	"ctrl+c":    tea.KeyCtrlC,
+	"ctrl+a":    tea.KeyCtrlA,
+	"ctrl+d":    tea.KeyCtrlD,
+	"ctrl+u":    tea.KeyCtrlU,
+}
+
+// keyMsg builds the key message a real terminal would deliver for s.
+func keyMsg(s string) tea.KeyMsg {
+	if kt, ok := namedKeyTypes[s]; ok {
+		return tea.KeyMsg{Type: kt}
+	}
+
+	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+}
+
 func press(t *testing.T, m *app.Model, s string) *app.Model {
 	t.Helper()
 
-	return feed(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)})
+	return feed(t, m, keyMsg(s))
 }
 
 func pressBackspace(t *testing.T, m *app.Model) *app.Model {
@@ -210,6 +243,54 @@ func TestQuitKeysReturnQuitCommand(t *testing.T) {
 	}
 	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
 		t.Error("ctrl+c should produce a quit command")
+	}
+}
+
+// TestFastDoubleQuit pins that a quickly repeated q — which arrives as one
+// multi-rune key message, string "qq" — still quits: each rune is replayed
+// as its own keypress. Without this, users pressing q repeatedly because
+// "it does not work" only ever produce keys nothing listens to.
+func TestFastDoubleQuit(t *testing.T) {
+	t.Parallel()
+
+	m := resize(t, app.New("/d", app.Options{}), 80, 24)
+
+	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("qq")}); cmd == nil {
+		t.Error("a fast qq burst should produce a quit command")
+	}
+}
+
+// TestRuneBurstReplaysEachRune pins that a fast jjj run navigates three
+// entries down, like three separate presses would.
+func TestRuneBurstReplaysEachRune(t *testing.T) {
+	t.Parallel()
+
+	m := gridOnly(t, resize(t, app.New("/d", app.Options{}), 80, 24))
+	m = loaded(t, m, 1, "/d", entriesAt("/d", 30), nil)
+
+	// Five columns at this width, so each j steps a full row: three
+	// replayed presses land five rows down.
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("jjj")})
+	m = next.(*app.Model)
+	if got := m.FocusedPath(); filepath.Base(got) != "entry-15.txt" {
+		t.Fatalf("focus after jjj = %q, want entry-15", got)
+	}
+}
+
+// TestBracketedPasteStaysOpaque pins that multi-rune input marked as a
+// paste is not replayed as key presses: paste is text, and treating it as
+// keys would let pasted content trigger shortcuts.
+func TestBracketedPasteStaysOpaque(t *testing.T) {
+	t.Parallel()
+
+	m := resize(t, app.New("/d", app.Options{}), 80, 24)
+
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("qq"), Paste: true})
+	if cmd != nil {
+		t.Error("a pasted qq must not trigger quit or any other shortcut")
+	}
+	if _, ok := next.(*app.Model); !ok {
+		t.Fatalf("paste returned an unexpected model type %T", next)
 	}
 }
 

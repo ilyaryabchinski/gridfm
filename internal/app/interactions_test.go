@@ -101,7 +101,7 @@ func TestEnterInSidebarWithoutPlacesIsSafe(t *testing.T) {
 	m = press(t, m, "tab")
 
 	// With no entries in any section, enter must produce no action at all.
-	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("enter")})
+	next, cmd := m.Update(keyMsg("enter"))
 	if _, ok := next.(*app.Model); !ok {
 		t.Fatalf("Update returned %T, want *app.Model", next)
 	}
