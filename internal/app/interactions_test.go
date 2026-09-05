@@ -536,7 +536,13 @@ func TestOpenCompletionDuringPendingBackDoesNotStrandHistory(t *testing.T) {
 	m := gridOnly(t, resize(t, app.New("/root", app.Options{}), 80, 24))
 	m = loaded(t, m, 1, "/root", entriesAt("/root", 2), nil)
 	m = pressBackspace(t, m)
-	m = loaded(t, m, 2, "/root/deep", entriesAt("/root/deep", 2), nil)
+	// A desktop-managed file, not an editor target: the editor path
+	// depends on $VISUAL/$EDITOR and would make this test env-dependent.
+	desktopEntries := []browser.Entry{
+		{Name: "thing.bin", Path: "/root/deep/thing.bin"},
+		{Name: "other.bin", Path: "/root/deep/other.bin"},
+	}
+	m = loaded(t, m, 2, "/root/deep", desktopEntries, nil)
 
 	// Open a desktop-managed file (open identity 1), then start a back
 	// traversal (browse request 2) while the opener is still running.
