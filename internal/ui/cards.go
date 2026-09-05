@@ -93,12 +93,13 @@ func Classify(e browser.Entry) Category {
 }
 
 // CardState carries the visual state of one card: focused adds the strong
-// border, selected fills an accent background, and dimmed marks entries
-// staged for a move.
+// border, selected fills an accent background, dimmed marks entries
+// staged for a move, and image reserves the label rows for a thumbnail.
 type CardState struct {
 	Focused  bool
 	Selected bool
 	Dimmed   bool
+	Image    bool
 }
 
 // RenderCard draws one fixed-size card for the zoom level. The size comes
@@ -131,7 +132,7 @@ func RenderCard(e browser.Entry, zoom ZoomLevel, state CardState, icons IconMode
 	styledName := nameStyle.Bold(focused)
 	name := styledName.Render(TruncateName(SanitizeName(e.Name), innerWidth))
 
-	lines := cardLines(e, zoom, innerWidth, label, name, styledName)
+	lines := cardLines(e, zoom, innerWidth, label, name, styledName, state.Image)
 
 	border := lipgloss.RoundedBorder()
 	borderForeground := categoryColor[category]
@@ -156,8 +157,9 @@ func categoryStyle(c Category) lipgloss.Style {
 
 // cardLines composes the content lines for one zoom level. styledName is
 // the fully styled name renderer, reused by the compact branch so its
-// truncated name keeps the selected, dimmed, and focus styling.
-func cardLines(e browser.Entry, zoom ZoomLevel, innerWidth int, label, name string, styledName lipgloss.Style) []string {
+// truncated name keeps the selected, dimmed, and focus styling. image
+// reserves the label rows on a normal card for a thumbnail.
+func cardLines(e browser.Entry, zoom ZoomLevel, innerWidth int, label, name string, styledName lipgloss.Style, image bool) []string {
 	switch zoom {
 	case ZoomCompact:
 		// Icon and truncated name share the single content line.
@@ -176,6 +178,12 @@ func cardLines(e browser.Entry, zoom ZoomLevel, innerWidth int, label, name stri
 			lipgloss.NewStyle().Faint(true).Render(TruncateName(when, innerWidth)),
 		}
 	case ZoomNormal:
+		if image {
+			// A thumbnail covers these cells; blank text keeps glyph
+			// edges from peeking around the image.
+			return []string{"", "", name}
+		}
+
 		return []string{
 			lipgloss.PlaceHorizontal(innerWidth, lipgloss.Center, label),
 			"",

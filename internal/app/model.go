@@ -7,6 +7,7 @@ import (
 
 	"gridfm/internal/browser"
 	"gridfm/internal/graphics"
+	"gridfm/internal/graphics/kitty"
 	"gridfm/internal/operations"
 	"gridfm/internal/places"
 	"gridfm/internal/preview"
@@ -112,10 +113,7 @@ type Model struct {
 	mounts    []places.Place
 	recents   []places.Place
 
-	icons ui.IconMode
-	// images is the resolved graphics protocol, empty when thumbnails are
-	// unavailable or disabled.
-	images    graphics.Protocol
+	icons     ui.IconMode
 	zoom      ui.ZoomLevel
 	region    Region
 	sidebarOn bool
@@ -162,6 +160,15 @@ type Model struct {
 	// Help overlay state: the keyboard legend.
 	helpOpen bool
 
+	// Thumbnails. images names the resolved protocol; the sink ships
+	// desired slot lists to the ImageSync goroutine; ready holds
+	// generated PNGs keyed like the loader requests (bounded FIFO).
+	images     graphics.Protocol
+	imgSink    chan<- []kitty.Slot
+	thumbReady map[string][]byte
+	thumbKeys  []string
+	thumbLoad  func(ThumbJob)
+
 	// Inspector panel state. The request id rejects stale loads; the panel
 	// content clears the moment focus moves elsewhere.
 	inspectorOn   bool
@@ -202,15 +209,16 @@ func New(startPath string, opts Options) *Model {
 	proto, _ := graphics.Resolve(opts.Images, os.Getenv)
 
 	return &Model{
-		browser:   browser.New(startPath),
-		icons:     opts.Icons,
-		images:    proto,
-		zoom:      ui.ZoomNormal,
-		sidebarOn: true,
-		requestID: 1,
-		loading:   true,
-		ops:       operations.NewManager(),
-		watch:     w,
+		browser:    browser.New(startPath),
+		icons:      opts.Icons,
+		images:     proto,
+		thumbReady: map[string][]byte{},
+		zoom:       ui.ZoomNormal,
+		sidebarOn:  true,
+		requestID:  1,
+		loading:    true,
+		ops:        operations.NewManager(),
+		watch:      w,
 	}
 }
 
@@ -249,6 +257,23 @@ func (m *Model) Zoom() ui.ZoomLevel { return m.zoom }
 // whether thumbnails may be drawn at all.
 func (m *Model) ImageProtocol() (graphics.Protocol, bool) {
 	return m.images, m.images != ""
+}
+
+// SetImageSink wires the channel that receives desired thumbnail
+// placements. Only meaningful when a protocol resolved; main connects it
+// to the ImageSync goroutine.
+func (m *Model) SetImageSink(ch chan<- []kitty.Slot) {
+	if m.images != "" {
+		m.imgSink = ch
+	}
+}
+
+// SetThumbLoader wires the thumbnail generation path. Results come back
+// as ThumbReadyMsg through the program.
+func (m *Model) SetThumbLoader(load func(ThumbJob)) {
+	if m.images != "" {
+		m.thumbLoad = load
+	}
 }
 
 // SortMode and SortOrder expose the active ordering for tests and status.

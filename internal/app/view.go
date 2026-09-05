@@ -22,8 +22,15 @@ func (m *Model) View() string {
 
 	l := m.layout()
 	if !l.Usable {
+		// Anything on screen must go when the terminal collapses.
+		m.syncImages(l)
+
 		return ui.RenderTooSmall(m.width, m.height)
 	}
+
+	// Thumbnail reconciliation rides on the render pass: it is a pure
+	// channel send computing exactly what this frame shows.
+	m.syncImages(l)
 
 	body := m.renderBody(l, m.bodyHeight(l))
 	if l.SidebarOverlay {
@@ -377,8 +384,9 @@ func (m *Model) renderSortMenu(l ui.Layout) string {
 	return placeOverlayBox(l, lines)
 }
 
-// cardState assembles the visual state of one card: focus, selection, and
-// the dimmed marker for entries staged for a move.
+// cardState assembles the visual state of one card: focus, selection, the
+// dimmed marker for entries staged for a move, and the image reservation
+// when a ready thumbnail will cover the label rows.
 func (m *Model) cardState(entry browser.Entry, focused bool) ui.CardState {
 	dimmed := m.clipboard == ClipboardMove && slices.Contains(m.clipboardPath, entry.Path)
 
@@ -386,6 +394,7 @@ func (m *Model) cardState(entry browser.Entry, focused bool) ui.CardState {
 		Focused:  focused,
 		Selected: m.browser.Selection().Has(entry.Path),
 		Dimmed:   dimmed,
+		Image:    m.hasThumb(entry),
 	}
 }
 

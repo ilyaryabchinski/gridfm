@@ -45,9 +45,24 @@ func main() {
 		fatalf("resolve start location: %v", err)
 	}
 
-	program := tea.NewProgram(app.New(path, app.Options{Icons: mode, Images: imageMode}), tea.WithAltScreen())
+	model := app.New(path, app.Options{Icons: mode, Images: imageMode})
+	program := tea.NewProgram(model, tea.WithAltScreen())
+
+	// Thumbnails ride on a side goroutine: placements go to the terminal
+	// outside the render loop, generation results come back as messages.
+	var syncer *app.ImageSync
+	if _, ok := model.ImageProtocol(); ok {
+		cellW, cellH := cellSize()
+		syncer = app.NewImageSync(os.Stdout, app.DefaultThumbCache(), cellW, cellH,
+			func(msg app.ThumbReadyMsg) { program.Send(msg) })
+		model.SetImageSink(syncer.SlotChan())
+		model.SetThumbLoader(syncer.Load)
+	}
 
 	final, err := program.Run()
+	if syncer != nil {
+		syncer.Stop()
+	}
 	if closer, ok := final.(*app.Model); ok {
 		_ = closer.Close() // release the filesystem watcher
 	}

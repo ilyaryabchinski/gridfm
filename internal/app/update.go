@@ -77,6 +77,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case InspectorLoadedMsg:
 		return m.applyInspectorLoaded(msg)
 
+	case ThumbReadyMsg:
+		// A finished thumbnail only matters if its entry is still known;
+		// the next View re-syncs placements either way.
+		m.applyThumbReady(msg)
+
+		return m, nil
+
 	case EntryResolvedMsg:
 		return m.applyEntryResolved(msg)
 
