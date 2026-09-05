@@ -162,25 +162,26 @@ func helpColumn(title string, rows []binding) string {
 }
 
 // renderHelpOverlay centers the keyboard legend: the application's
-// everyday bindings, in two columns so it fits a normal terminal.
+// everyday bindings, in two columns so it fits a normal terminal. Keys
+// render from the bind table so remaps are always accurate.
 func (m *Model) renderHelpOverlay(l ui.Layout) string {
 	navigate := helpColumn("navigate", []binding{
 		{"arrows h j k l", "move"},
-		{"enter / o", "open"},
+		{"enter / " + m.KeyFor("open"), "open"},
 		{"backspace / h", "parent (at edge)"},
 		{"alt+left/right", "history"},
 		{"pgup / pgdn", "page"},
 		{"home / end", "first/last"},
 		{"tab", "focus pane"},
-		{"~", "sidebar"},
+		{m.KeyFor("sidebar"), "sidebar"},
 	})
 	view := helpColumn("view", []binding{
-		{"/", "filter"},
-		{".", "hidden files"},
-		{"s", "sort menu"},
-		{"+ / -", "card size"},
-		{"i", "inspector"},
-		{"r", "refresh"},
+		{m.KeyFor("filter"), "filter"},
+		{m.KeyFor("hidden"), "hidden files"},
+		{m.KeyFor("sort"), "sort menu"},
+		{m.KeyFor("zoom_in") + " / " + m.KeyFor("zoom_out"), "card size"},
+		{m.KeyFor("inspector"), "inspector"},
+		{m.KeyFor("refresh"), "refresh"},
 	})
 	act := helpColumn("select + files", []binding{
 		{"space", "toggle select"},
@@ -198,8 +199,8 @@ func (m *Model) renderHelpOverlay(l ui.Layout) string {
 		{"ctrl+c", "quit"},
 		{"e", "last result"},
 		{"esc", "clear / close"},
-		{keyHelp, "this legend"},
-		{"q", "quit"},
+		{m.KeyFor("help"), "this legend"},
+		{m.KeyFor("quit"), "quit"},
 	})
 
 	left := lipgloss.JoinVertical(lipgloss.Left, navigate, "", view)

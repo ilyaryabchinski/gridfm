@@ -9,18 +9,19 @@ import (
 // This file owns the two modal input surfaces: the blocking sort menu
 // overlay and the incremental filter input.
 
-// handleSortKeys drives the sort menu overlay.
+// handleSortKeys drives the sort menu overlay. It closes on esc, its own
+// key, or the quit key, all honoring remapping.
 func (m *Model) handleSortKeys(key string) (tea.Model, tea.Cmd) {
-	switch key {
-	case keyEsc, "s", "q":
+	switch {
+	case key == keyEsc || m.binds.action(key) == "sort" || m.binds.action(key) == "quit":
 		m.sortOpen = false
 
 		return m, nil
-	case keyUp, "k":
+	case key == keyUp || key == "k":
 		m.sortCursor = max(m.sortCursor-1, 0)
-	case keyDown, "j":
+	case key == keyDown || key == "j":
 		m.sortCursor = min(m.sortCursor+1, len(sortModes)-1)
-	case keyEnter:
+	case key == keyEnter:
 		mode := sortModes[m.sortCursor]
 		order := browser.SortAscending
 		if m.browser.SortMode() == mode {
@@ -32,7 +33,9 @@ func (m *Model) handleSortKeys(key string) (tea.Model, tea.Cmd) {
 		m.clampScroll()
 
 		return m, m.afterVisibleChange()
-	case "o":
+	case key == "o":
+		// Reverse without leaving the menu; surface-specific, not
+		// remapped.
 		m.browser.SetSort(m.browser.SortMode(), m.browser.SortOrder().Opposite())
 		m.clampScroll()
 

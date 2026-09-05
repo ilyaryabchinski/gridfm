@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"gridfm/internal/browser"
+	"gridfm/internal/config"
 	"gridfm/internal/graphics"
 	"gridfm/internal/operations"
 	"gridfm/internal/places"
@@ -91,6 +92,8 @@ type Options struct {
 	// browser's built-in name-ascending default.
 	Sort  string
 	Order string
+	// Keys remaps common actions; nil or empty keeps the defaults.
+	Keys config.Keymap
 }
 
 // pendingQuestion holds an open conflict question from the operation
@@ -180,6 +183,9 @@ type Model struct {
 	thumbKeys  []string
 	thumbLoad  func(ThumbJob)
 
+	// binds maps keys to actions, honoring the user's remapping.
+	binds *keybinds
+
 	// Inspector panel state. The request id rejects stale loads; the panel
 	// content clears the moment focus moves elsewhere.
 	inspectorOn   bool
@@ -251,6 +257,7 @@ func New(startPath string, opts Options) *Model {
 		icons:       opts.Icons,
 		images:      proto,
 		thumbReady:  map[string][]byte{},
+		binds:       newKeybinds(opts.Keys),
 		zoom:        ui.ZoomNormal,
 		sidebarOn:   showSidebar,
 		inspectorOn: showInspector,
@@ -374,6 +381,13 @@ func (m *Model) EnqueueOperation(op operations.Operation) error {
 
 // SidebarOn reports whether the sidebar is toggled open.
 func (m *Model) SidebarOn() bool { return m.sidebarOn }
+
+// SortOpen reports whether the sort menu overlay is up.
+func (m *Model) SortOpen() bool { return m.sortOpen }
+
+// KeyFor renders the key bound to an action, honoring remapping — used
+// by the legend and tests.
+func (m *Model) KeyFor(action string) string { return m.binds.keyFor(action) }
 
 // InspectorOn reports whether the inspector panel is toggled open.
 func (m *Model) InspectorOn() bool { return m.inspectorOn }

@@ -456,10 +456,10 @@ func (m *Model) handleKey(key string) (tea.Model, tea.Cmd) {
 }
 
 // handleHelpKeys drives the keyboard legend: only its close keys act, so
-// hidden grid shortcuts never fire while it is up.
+// hidden grid shortcuts never fire while it is up. The legend closes on
+// esc, its own key, or the quit key — all honoring remapping.
 func (m *Model) handleHelpKeys(key string) (tea.Model, tea.Cmd) {
-	switch key {
-	case keyEsc, keyHelp, "q":
+	if key == keyEsc || m.binds.action(key) == "help" || m.binds.action(key) == "quit" {
 		m.helpOpen = false
 	}
 
@@ -478,14 +478,13 @@ func (m *Model) handleResultsKeys(key string) (tea.Model, tea.Cmd) {
 
 // handleNormalKeys applies browsing keys outside overlays and inputs: it
 // owns quit, focus region switching, and transient-state clearing, then
-// delegates to the display and entry handlers.
+// delegates to the display and entry handlers. Remappable actions
+// dispatch through the keybind table; structural keys stay fixed.
 func (m *Model) handleNormalKeys(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "ctrl+c":
 		// Quitting with active jobs is an explicit decision, so ctrl+c
-		// takes the same confirmed path as q.
-		return m.requestQuit()
-	case "q":
+		// takes the same confirmed path as the quit key.
 		return m.requestQuit()
 	case keyTab:
 		return m.switchRegion(), nil
@@ -493,6 +492,10 @@ func (m *Model) handleNormalKeys(key string) (tea.Model, tea.Cmd) {
 		m.escalateClear()
 
 		return m, nil
+	}
+
+	if m.binds.action(key) == "quit" {
+		return m.requestQuit()
 	}
 
 	if handler, ok := normalKeyHandlers[key]; ok {
@@ -599,8 +602,8 @@ func (m *Model) anchorIndex() int {
 // handleDisplayKeys owns interface visibility and presentation: sidebar
 // toggle, sort menu, hidden files, zoom, and the filter input.
 func (m *Model) handleDisplayKeys(key string) (tea.Model, tea.Cmd) {
-	switch key {
-	case "~":
+	switch m.binds.action(key) {
+	case "sidebar":
 		m.sidebarOn = !m.sidebarOn
 		if !m.sidebarEffective() {
 			m.region = RegionGrid
@@ -611,26 +614,26 @@ func (m *Model) handleDisplayKeys(key string) (tea.Model, tea.Cmd) {
 		m.clampScroll()
 
 		return m, nil
-	case "s":
+	case "sort":
 		m.sortOpen = true
 		m.sortCursor = int(m.browser.SortMode())
 
 		return m, nil
-	case ".":
+	case "hidden":
 		m.browser.SetShowHidden(!m.browser.ShowHidden())
 		m.clampScroll()
 
 		return m, m.afterVisibleChange()
-	case "+", "=":
+	case "zoom_in":
 		return m.stepZoom(m.zoom.ZoomIn())
-	case "-", "_":
+	case "zoom_out":
 		return m.stepZoom(m.zoom.ZoomOut())
-	case "/":
+	case "filter":
 		m.region = RegionGrid
 		m.filterInput = true
 
 		return m, nil
-	case "i":
+	case "inspector":
 		if m.region != RegionGrid {
 			return m, nil
 		}
@@ -651,11 +654,11 @@ func (m *Model) handleDisplayKeys(key string) (tea.Model, tea.Cmd) {
 		}
 
 		return m, m.requestInspector()
-	case "r":
+	case "refresh":
 		// Manual refresh: the fallback when watching is unavailable and
 		// the escape hatch from stale listings in general.
 		return m, loadDirectoryCmd(m.startRequest(), m.browser.Path)
-	case keyHelp:
+	case "help":
 		m.helpOpen = true
 
 		return m, nil
@@ -676,16 +679,16 @@ func (m *Model) stepZoom(next ui.ZoomLevel) (tea.Model, tea.Cmd) {
 // handleEntryKeys owns entry-level actions: entering, opening, parent
 // navigation, and location history.
 func (m *Model) handleEntryKeys(key string) (tea.Model, tea.Cmd) {
-	switch key {
-	case keyEnter:
+	switch {
+	case key == keyEnter:
 		return m.handleEnter()
-	case keyBackspace:
+	case key == keyBackspace:
 		return m.goToParent()
-	case "alt+left":
+	case key == "alt+left":
 		return m.historyStep(m.browser.Back)
-	case "alt+right":
+	case key == "alt+right":
 		return m.historyStep(m.browser.Forward)
-	case "o":
+	case m.binds.action(key) == "open":
 		return m.openFocused()
 	}
 

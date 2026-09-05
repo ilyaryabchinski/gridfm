@@ -35,6 +35,8 @@ type Config struct {
 	Sort string `toml:"sort"`
 	// Order is the initial sort direction: asc or desc.
 	Order string `toml:"order"`
+	// Keys remaps common actions to different keys.
+	Keys Keymap `toml:"keys"`
 }
 
 // Path returns the configuration file location: $XDG_CONFIG_HOME, then
@@ -75,6 +77,10 @@ func Load(path string) (Config, error) {
 		return cfg, err
 	}
 
+	if err := cfg.Keys.Validate(); err != nil {
+		return cfg, err
+	}
+
 	return cfg, nil
 }
 
@@ -111,6 +117,9 @@ type Resolved struct {
 	ShowHidden bool
 	Sort       string
 	Order      string
+	// Keys carries the validated key remapping; use KeyFor to look up a
+	// key by action.
+	Keys Keymap
 }
 
 // Resolve applies defaults to every unset field.
@@ -142,6 +151,7 @@ func (c Config) Resolve() Resolved {
 	if c.Order != "" {
 		r.Order = c.Order
 	}
+	r.Keys = c.Keys
 
 	return r
 }
