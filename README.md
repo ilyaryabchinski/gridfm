@@ -3,30 +3,84 @@
 A keyboard-first terminal file manager that presents the filesystem as a
 responsive grid of visual cards. Directories are spaces you move through,
 not lists you read: cards tile with gaps, resize with the terminal, and
-zoom between compact, normal, and detailed densities.
+zoom between three densities — with image thumbnails where the terminal
+allows it and fast, safe operations everywhere else.
 
 ![](docs/screenshot.png)
 
 ## Features
 
-- **Spatial grid navigation** — arrows or vim keys, wrapping edges,
-  focus preservation across sort, filter, and resize.
-- **Safe mutations** — copy, move, rename, create, trash, and delete
-  through a bounded serial queue with overwrite questions, partial
-  completion reporting, and a trash path that restores `.trashinfo`
-  metadata.
+### Browsing
+
+- **Spatial grid navigation** — arrows or vim keys across a reflowing
+  card grid; page up/down, home/end; blocked moves are no-ops, never
+  surprise navigation.
+- **Three zoom densities** — compact, normal, and detailed cards
+  (`+` / `-`), with automatic compaction on short terminals.
 - **Live directories** — inotify-watched with debounced refreshes and a
-  dirty latch that catches changes during a load.
-- **Inspector panel** — size, permissions, ownership, timestamps, and a
-  bounded text preview for small files, refreshed on every applied
-  directory change.
-- **Image thumbnails** — kitty-graphics-protocol rendering on kitty and
-  Ghostty with a bounded, LRU-evicted disk cache; hard resource limits
-  against oversized or hostile images; reliable icon fallback everywhere
-  else.
-- **Library sidebar** — places, bookmarks, mounts, and recent locations.
-- **Theming and remapping** — `[theme]` color palettes and `[keys]`
-  action remapping in TOML.
+  stale-load latch that catches changes during a load; degrades to
+  manual refresh with a note if watching fails.
+- **Incremental filtering** — `/` narrows the view as you type, with
+  selection preserved; the filter is per-directory scratch space and
+  clears when you navigate elsewhere.
+- **Sorting** — name, size, modified, or type, ascending or descending,
+  directories grouped first, applied live from the sort menu.
+- **Focus preservation** — sort, filter, refresh, and resize keep the
+  focused entry focused.
+
+### Files and operations
+
+- **Full mutation set** — copy, move, rename, create files and
+  directories, trash, and permanent delete.
+- **Safe by construction** — overwrite conflicts are asked per item or
+  applied to all, recursive copies refuse to descend into themselves,
+  symlinks are resolved before replacement, and cross-device moves fall
+  back to copy-and-verify instead of failing.
+- **Real trash** — XDG trash with `.trashinfo` metadata, so desktop
+  environments can restore what gridfm trashed.
+- **Bounded serial queue** — operations run one at a time with
+  byte-level progress, cancellable mid-flight, and partial completion
+  reported accurately (3 of 5 moved is not "done").
+- **Results you can inspect** — a non-blocking operation shelf, a
+  per-operation summary log, and a results overlay listing every item's
+  outcome.
+- **Typed confirmation for deletes** — permanent deletion requires
+  typing `yes`; trash does not.
+
+### Panels
+
+- **Library sidebar** — standard places, your bookmarks, mounted
+  filesystems, and recent locations; choosing one hands focus back to
+  the grid.
+- **Inspector panel** — size, permissions, ownership, timestamps,
+  symlink targets, and a bounded text preview for small files — kept
+  fresh across refreshes, focus moves, edits, and metadata changes.
+- **Bookmarks** — managed in-app with `b` / `B`, persisted in
+  `$XDG_DATA_HOME/gridfm`.
+
+### Images
+
+- **Kitty-graphics thumbnails** — auto-detected on kitty and Ghostty,
+  placed cursor-neutrally and cleaned up on scroll, zoom, resize,
+  overlay, external open, and exit.
+- **Hard resource limits** — oversized files are refused unread, hostile
+  images are rejected from their headers before any decode, and results
+  live in an owner-only LRU disk cache.
+- **Reliable fallback** — unsupported terminals, multiplexers, and
+  failed generations keep the icon rendering; nothing degrades into
+  blank cards.
+
+### Feel
+
+- **Keyboard first** — every action from the keys, with a live `?`
+  legend that reflects your remaps.
+- **Remappable** — `[keys]` rebinds eleven common actions; reserved
+  keys and collisions are rejected with an explanation.
+- **Themeable** — `[theme]` recolors every surface by semantic role and
+  file-type category, ANSI 256 or truecolor hex.
+- **Mouse, if you want it** — opt-in click-to-focus, ctrl-click select,
+  double-click open, and region-aware wheel scrolling; off by default
+  because capture steals text selection.
 
 ## Install
 
@@ -35,8 +89,8 @@ zoom between compact, normal, and detailed densities.
 ```
 git clone <repository-url>
 cd tui-files
-go build -o bin/gridfm ./cmd/gridfm
-install -Dm755 bin/gridfm ~/.local/bin/gridfm
+make build
+make install   # bin/gridfm -> ~/.local/bin, man page included
 ```
 
 ### From release binaries
@@ -75,8 +129,9 @@ gridfm --hidden --sort size --order desc
 ## Configuration
 
 `$XDG_CONFIG_HOME/gridfm/config.toml` (default `~/.config/...`). A
-missing file is a clean first run; an invalid value is an error naming
-the key — typos are never silently ignored. Command-line flags win.
+missing file is a clean first run; an invalid value or a misspelled key
+is an error naming the key — typos are never silently ignored.
+Command-line flags win.
 
 ```toml
 icons = "unicode"        # labels | unicode | nerdfont
@@ -113,7 +168,7 @@ go = "14"                #   archive, media, text, other
 | backspace | parent directory |
 | alt+left / alt+right | history |
 | tab | switch pane |
-| / | filter |
+| / | filter (clears on navigation) |
 | . | hidden files |
 | s | sort menu |
 | + / - | card size |
@@ -146,6 +201,7 @@ remaps.
 make build   # bin/gridfm
 make check   # vet + lint + test
 go test -race ./...
+make bench   # performance benchmarks
 ```
 
 ## Performance
