@@ -1,0 +1,127 @@
+.TH GRIDFM 1 "2026-09-05" "gridfm" "User Commands"
+.SH NAME
+gridfm \- a keyboard-first terminal file manager with a visual card grid
+.SH SYNOPSIS
+.B gridfm
+.RI [ options ] " [directory]"
+.SH DESCRIPTION
+.B gridfm
+presents the filesystem as a responsive grid of cards: directories and
+files are navigated spatially with arrow or vim keys, inspected in a
+side panel, mutated through a safe operation queue with trash support,
+and — on terminals that speak the Kitty graphics protocol — previewed
+as image thumbnails.
+.SH OPTIONS
+.TP
+.BI \-icons " mode"
+File type representation:
+.BR labels ", " unicode ", or " nerdfont "."
+Default is taken from the configuration file, else
+.BR unicode .
+.TP
+.BI \-images " mode"
+Terminal image thumbnails:
+.BR auto ", " on ", or " off "."
+.B auto
+enables thumbnails on kitty and Ghostty;
+.B on
+forces them on (for terminals verified to speak the protocol);
+.B off
+disables them.
+.TP
+.B \-sidebar
+Show the sidebar at start. On by default.
+.TP
+.B \-inspector
+Open the inspector panel at start. Off by default.
+.TP
+.B \-hidden
+Show dot-prefixed entries. Off by default.
+.TP
+.BI \-sort " mode"
+Initial sort:
+.BR name ", " size ", " modified ", or " type .
+.TP
+.BI \-order " dir"
+Initial sort direction:
+.B asc
+or
+.BR desc .
+.TP
+.B \-mouse
+Enable mouse clicks and wheel scrolling. Off by default: capturing the
+pointer disables the terminal's text selection.
+.TP
+.BI \-completions " shell"
+Print a completion script for
+.BR bash ", " zsh ", or " fish
+and exit.
+.SH KEYBINDINGS
+.SS Navigation
+.TS
+tab(|);
+l l.
+arrows, h j k l|move focus
+enter|enter directory / open
+backspace|parent directory
+alt+left / alt+right|browsing history
+pgup / pgdn|page
+home / end|first / last
+tab|switch grid / sidebar focus
+.TE
+.SS View
+.TS
+tab(|);
+l l.
+/|filter (type to narrow)
+.|toggle hidden files
+s|sort menu (+ reverse with o)
++ / \-|card size
+i|inspector panel
+~|sidebar
+r|refresh
+?|this legend
+.TE
+.SS Files
+.TS
+tab(|);
+l l.
+space|toggle selection
+v|range select mode
+ctrl+a|select visible
+y / x|stage copy / move
+p|paste
+n / ctrl+d|new file / directory
+R|rename
+d / D|trash / delete (D types "yes")
+b / B|bookmark add / remove
+o|open (editor or xdg-open)
+c|cancel running operation
+e|last operation result
+q|quit (confirms while jobs run)
+.TE
+.SH FILES
+.TP
+.I $XDG_CONFIG_HOME/gridfm/config.toml
+Configuration. A missing file means defaults; see
+.B README.md
+for the schema covering icons, thumbnails, panels, sorting, key
+remapping
+.RI( [keys] ),
+and the color palette
+.RI( [theme] ).
+.TP
+.I $XDG_DATA_HOME/gridfm/bookmarks.toml
+Bookmarks, managed with
+.B b
+and
+.BR B .
+.TP
+.I $XDG_CACHE_HOME/gridfm/thumbs
+Bounded thumbnail cache.
+.SH EXIT STATUS
+0 on success, 1 on usage or configuration errors.
+.SH AUTHORS
+The gridfm authors.
+.SH "SEE ALSO"
+The project README for configuration examples and installation.

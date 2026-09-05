@@ -22,3 +22,7 @@ check: vet lint test
 
 clean:
 	rm -rf bin
+
+install: build
+	install -Dm755 bin/gridfm ~/.local/bin/gridfm
+	install -Dm644 docs/gridfm.1 ~/.local/share/man/man1/gridfm.1
