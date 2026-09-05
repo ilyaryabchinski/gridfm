@@ -94,6 +94,8 @@ type Options struct {
 	Order string
 	// Keys remaps common actions; nil or empty keeps the defaults.
 	Keys config.Keymap
+	// Theme installs a color palette; nil keeps the default theme.
+	Theme *ui.Theme
 }
 
 // pendingQuestion holds an open conflict question from the operation
@@ -227,6 +229,9 @@ func New(startPath string, opts Options) *Model {
 
 	b := browser.New(startPath)
 	b.SetShowHidden(opts.ShowHidden)
+	if opts.Theme != nil {
+		ui.SetTheme(*opts.Theme)
+	}
 	if opts.Sort != "" {
 		mode := browser.SortByName
 		switch opts.Sort {

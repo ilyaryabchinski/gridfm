@@ -19,7 +19,7 @@ func RenderInspector(width, height int, info *preview.Info, loadErr error, loadi
 		width = 1
 	}
 
-	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")).
+	title := lipgloss.NewStyle().Bold(true).Foreground(CurrentTheme().Accent).
 		Render(" inspector")
 
 	lines := []string{title, ""}
@@ -39,7 +39,7 @@ func RenderInspector(width, height int, info *preview.Info, loadErr error, loadi
 		MaxWidth(width).
 		MaxHeight(max(height, 1)).
 		Border(lipgloss.NormalBorder(), false, false, false, true).
-		BorderForeground(lipgloss.Color("8")).
+		BorderForeground(CurrentTheme().Muted).
 		Render(body)
 }
 
@@ -67,18 +67,18 @@ func detail(info *preview.Info, width int) []string {
 	lines = append(lines, faint("owner   ")+fit(info.Owner+" : "+info.Group))
 	lines = append(lines, faint("modified")+fit(" "+info.ModTime.Format(time.DateTime)))
 	if info.ReadOnly {
-		lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render(fit("read-only")))
+		lines = append(lines, lipgloss.NewStyle().Foreground(CurrentTheme().Warning).Render(fit("read-only")))
 	}
 	if info.Symlink {
 		target := fit("-> " + info.LinkTarget)
 		if info.TargetMissing {
-			target = lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render(target)
+			target = lipgloss.NewStyle().Foreground(CurrentTheme().Warning).Render(target)
 		}
 		lines = append(lines, target)
 	}
 
 	if len(info.Preview) > 0 {
-		lines = append(lines, "", lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")).
+		lines = append(lines, "", lipgloss.NewStyle().Bold(true).Foreground(CurrentTheme().Accent).
 			Render(" preview"))
 		for _, line := range info.Preview {
 			lines = append(lines, faint(fit(line)))

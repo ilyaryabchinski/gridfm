@@ -149,7 +149,7 @@ type binding struct {
 // helpColumn renders one titled column of the keyboard legend: rows with a
 // fixed-width key field.
 func helpColumn(title string, rows []binding) string {
-	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")).
+	header := lipgloss.NewStyle().Bold(true).Foreground(ui.CurrentTheme().Accent).
 		Render(" " + title)
 	lines := make([]string, 0, 2+len(rows))
 	lines = append(lines, header)
@@ -422,7 +422,7 @@ func (m *Model) renderShelf(l ui.Layout) string {
 	line += "  (c cancels)"
 
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color("6")).
+		Foreground(ui.CurrentTheme().Info).
 		Width(l.ContentWidth).
 		MaxWidth(l.ContentWidth).
 		Render(ui.TruncateName(line, l.ContentWidth))
@@ -461,7 +461,7 @@ func (m *Model) renderConfirmOverlay(l ui.Layout) string {
 		title = " CONFIRM "
 	}
 
-	lines := []string{lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("3")).Render(title)}
+	lines := []string{lipgloss.NewStyle().Bold(true).Foreground(ui.CurrentTheme().Warning).Render(title)}
 	for _, detail := range m.confirmDetail {
 		lines = append(lines, ui.TruncateName(ui.SanitizeName(detail), 56))
 	}
@@ -482,7 +482,7 @@ func (m *Model) renderConfirmOverlay(l ui.Layout) string {
 func (m *Model) renderConflictOverlay(l ui.Layout) string {
 	lines := make([]string, 0, 6)
 	lines = append(lines,
-		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("3")).Render(" TARGET EXISTS "),
+		lipgloss.NewStyle().Bold(true).Foreground(ui.CurrentTheme().Warning).Render(" TARGET EXISTS "),
 		ui.TruncateName(ui.SanitizeName(m.question.target), 56),
 		"",
 		"s skip · r replace · n rename as copy",
@@ -524,7 +524,7 @@ func (m *Model) renderResultsOverlay(l ui.Layout) string {
 func inputBox(value string) string {
 	return lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("8")).
+		BorderForeground(ui.CurrentTheme().Muted).
 		Padding(0, 1).
 		Render(value + "▌")
 }
@@ -533,7 +533,7 @@ func inputBox(value string) string {
 func placeOverlayBox(l ui.Layout, lines []string) string {
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("8")).
+		BorderForeground(ui.CurrentTheme().Muted).
 		Padding(0, 1).
 		Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
 

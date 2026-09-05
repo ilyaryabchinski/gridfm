@@ -47,7 +47,7 @@ func RenderBreadcrumbs(width int, path, home string, canBack, canForward bool) s
 // the direction is available and faint when exhausted.
 func renderHistoryIndicators(canBack, canForward bool) string {
 	dim := lipgloss.NewStyle().Faint(true)
-	live := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
+	live := lipgloss.NewStyle().Bold(true).Foreground(CurrentTheme().Accent)
 
 	back, forward := dim.Render("←"), dim.Render("→")
 	if canBack {
@@ -93,7 +93,7 @@ func collapseLeadSegment(segments []string) []string {
 // terminal.
 func renderCrumbs(segments []string) string {
 	separator := lipgloss.NewStyle().Faint(true).Render(" / ")
-	crumbStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
+	crumbStyle := lipgloss.NewStyle().Bold(true).Foreground(CurrentTheme().Accent)
 
 	rendered := make([]string, 0, len(segments))
 	for _, segment := range segments {

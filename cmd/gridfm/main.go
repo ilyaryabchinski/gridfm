@@ -94,6 +94,11 @@ func main() {
 		fatalf("resolve start location: %v", err)
 	}
 
+	theme, err := ui.ThemeFromMap(cfg.Theme)
+	if err != nil {
+		fatalf("%v", err)
+	}
+
 	model := app.New(path, app.Options{
 		Icons:      mode,
 		Images:     imageMode,
@@ -102,6 +107,8 @@ func main() {
 		ShowHidden: *hidden,
 		Sort:       *sortBy,
 		Order:      *order,
+		Keys:       cfg.Keys,
+		Theme:      &theme,
 	})
 	program := tea.NewProgram(model, tea.WithAltScreen())
 

@@ -33,7 +33,7 @@ type StatusInfo struct {
 // RenderStatusBar draws the bottom bar: mode and browsing indicators on the
 // left, item counts on the right.
 func RenderStatusBar(width int, info StatusInfo) string {
-	left := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")).
+	left := lipgloss.NewStyle().Bold(true).Foreground(CurrentTheme().Strong).
 		Render(" " + info.Mode)
 	if info.Loading {
 		left += lipgloss.NewStyle().Faint(true).Render(" loading…")
@@ -42,14 +42,14 @@ func RenderStatusBar(width int, info StatusInfo) string {
 		left += lipgloss.NewStyle().Faint(true).Render(" " + info.Sort)
 	}
 	if info.HiddenOn {
-		left += lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render(" hidden on")
+		left += lipgloss.NewStyle().Foreground(CurrentTheme().Warning).Render(" hidden on")
 	}
 	if info.Filter != "" {
-		left += lipgloss.NewStyle().Foreground(lipgloss.Color("6")).
+		left += lipgloss.NewStyle().Foreground(CurrentTheme().Info).
 			Render(" /" + SanitizeName(info.Filter))
 	}
 	if info.Note != "" {
-		left += lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render(" " + SanitizeName(info.Note))
+		left += lipgloss.NewStyle().Foreground(CurrentTheme().Warning).Render(" " + SanitizeName(info.Note))
 	}
 
 	right := " "
@@ -79,5 +79,5 @@ func RenderTooSmall(width, height int) string {
 	message := "terminal too small to render the grid"
 
 	return lipgloss.Place(width, max(height, 1), lipgloss.Center, lipgloss.Center,
-		lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render(message))
+		lipgloss.NewStyle().Foreground(CurrentTheme().Warning).Render(message))
 }

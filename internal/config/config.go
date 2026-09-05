@@ -37,6 +37,9 @@ type Config struct {
 	Order string `toml:"order"`
 	// Keys remaps common actions to different keys.
 	Keys Keymap `toml:"keys"`
+	// Theme overrides palette colors by role or category name; values
+	// are ANSI 0-255 or #hex and are validated by the UI layer.
+	Theme map[string]string `toml:"theme"`
 }
 
 // Path returns the configuration file location: $XDG_CONFIG_HOME, then
@@ -120,6 +123,8 @@ type Resolved struct {
 	// Keys carries the validated key remapping; use KeyFor to look up a
 	// key by action.
 	Keys Keymap
+	// Theme carries raw color overrides for the UI layer to interpret.
+	Theme map[string]string
 }
 
 // Resolve applies defaults to every unset field.
@@ -152,6 +157,7 @@ func (c Config) Resolve() Resolved {
 		r.Order = c.Order
 	}
 	r.Keys = c.Keys
+	r.Theme = c.Theme
 
 	return r
 }

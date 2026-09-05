@@ -26,7 +26,7 @@ func RenderSidebar(width, height int, items []SidebarItem, selected int, focused
 		width = 1
 	}
 
-	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
+	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(CurrentTheme().Accent)
 	lines := make([]string, 0, 4+len(items)+len(operations))
 	rowStyle := lipgloss.NewStyle().Faint(true)
 	if focused {
@@ -71,7 +71,7 @@ func RenderSidebar(width, height int, items []SidebarItem, selected int, focused
 		MaxWidth(width).
 		MaxHeight(max(height, 1)).
 		Border(lipgloss.NormalBorder(), false, true, false, false).
-		BorderForeground(lipgloss.Color("8")).
+		BorderForeground(CurrentTheme().Muted).
 		Render(body)
 }
 

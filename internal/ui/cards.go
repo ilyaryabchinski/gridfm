@@ -60,19 +60,6 @@ var categoryLabel = map[Category]string{
 	CategoryOther:   "FILE",
 }
 
-// categoryColor maps categories to their ANSI color.
-//
-//nolint:gochecknoglobals // static lookup table, never mutated
-var categoryColor = map[Category]lipgloss.Color{
-	CategoryDir:     lipgloss.Color("4"),  // blue
-	CategoryGo:      lipgloss.Color("14"), // bright cyan
-	CategoryImage:   lipgloss.Color("5"),  // magenta
-	CategoryArchive: lipgloss.Color("3"),  // yellow
-	CategoryMedia:   lipgloss.Color("6"),  // cyan
-	CategoryText:    lipgloss.Color("2"),  // green
-	CategoryOther:   lipgloss.Color("7"),  // gray
-}
-
 // Classify maps an entry to its placeholder category. The .go extension gets
 // a dedicated category as a nod to the project's own working directory.
 func Classify(e browser.Entry) Category {
@@ -127,7 +114,7 @@ func RenderCard(e browser.Entry, zoom ZoomLevel, state CardState, icons IconMode
 	}
 	if state.Selected {
 		// Filled accent background per the selection styling contract.
-		nameStyle = nameStyle.Background(lipgloss.Color("4")).Foreground(lipgloss.Color("15"))
+		nameStyle = nameStyle.Background(CurrentTheme().Accent).Foreground(CurrentTheme().Strong)
 	}
 	styledName := nameStyle.Bold(focused)
 	name := styledName.Render(TruncateName(SanitizeName(e.Name), innerWidth))
@@ -135,11 +122,11 @@ func RenderCard(e browser.Entry, zoom ZoomLevel, state CardState, icons IconMode
 	lines := cardLines(e, zoom, innerWidth, label, name, styledName, state.Image)
 
 	border := lipgloss.RoundedBorder()
-	borderForeground := categoryColor[category]
+	borderForeground := CategoryColor(category)
 	if focused {
 		// Strong border plus high-contrast foreground for the focused card.
 		border = lipgloss.DoubleBorder()
-		borderForeground = lipgloss.Color("15") // bright white
+		borderForeground = CurrentTheme().Strong
 	}
 	body := lipgloss.JoinVertical(lipgloss.Center, lines...)
 
@@ -152,7 +139,7 @@ func RenderCard(e browser.Entry, zoom ZoomLevel, state CardState, icons IconMode
 }
 
 func categoryStyle(c Category) lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(categoryColor[c])
+	return lipgloss.NewStyle().Foreground(CategoryColor(c))
 }
 
 // cardLines composes the content lines for one zoom level. styledName is
