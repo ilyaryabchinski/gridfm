@@ -43,7 +43,12 @@ func sortModeValid(s string) bool {
 	return false
 }
 
+// version is stamped at build time via -ldflags; "dev" in source builds.
+var version = "dev"
+
 func main() {
+	v := flag.Bool("version", false, "print the version and exit")
+
 	// Layered configuration: built-in defaults, then the user's TOML
 	// file, then command-line flags. Each layer only fills what it
 	// explicitly sets.
@@ -70,6 +75,12 @@ func main() {
 		"print a shell completion script: bash, zsh, or fish")
 
 	flag.Parse()
+
+	if *v {
+		fmt.Println(version)
+
+		return
+	}
 
 	if *completions != "" {
 		script, err := completionFor(*completions)

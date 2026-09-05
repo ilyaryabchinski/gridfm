@@ -1,0 +1,41 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # git describe needs the tags
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: go test -race -timeout 10m ./...
+
+      - name: Build release artifacts
+        run: make release VERSION="${GITHUB_REF_NAME}"
+
+      # The build uses normalized tar metadata and gzip -n behavior via
+      # tar -czf with fixed mtimes, so re-running on the same tree and
+      # tag produces identical bytes.
+      - name: Verify reproducibility
+        run: |
+          make release VERSION="${GITHUB_REF_NAME}"
+          cd dist && sha256sum -c checksums.txt
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/checksums.txt
+          generate_release_notes: true
