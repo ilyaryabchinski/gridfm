@@ -55,7 +55,7 @@ func main() {
 		cellW, cellH := cellSize()
 		syncer = app.NewImageSync(os.Stdout, app.DefaultThumbCache(), cellW, cellH,
 			func(msg app.ThumbReadyMsg) { program.Send(msg) })
-		model.SetImageSink(syncer.SlotChan())
+		model.SetImageSink(syncer)
 		model.SetThumbLoader(syncer.Load)
 	}
 

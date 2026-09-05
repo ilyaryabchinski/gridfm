@@ -36,15 +36,33 @@ func TestImageResolutionPins(t *testing.T) {
 	}
 }
 
+// recordingSink captures what the model ships: desired slot lists and
+// reset demands.
+type recordingSink struct {
+	slots  [][]kitty.Slot
+	resets int
+}
+
+func (r *recordingSink) Slots(s []kitty.Slot) { r.slots = append(r.slots, s) }
+func (r *recordingSink) Reset()               { r.resets++ }
+
+func (r *recordingSink) last() []kitty.Slot {
+	if len(r.slots) == 0 {
+		return nil
+	}
+
+	return r.slots[len(r.slots)-1]
+}
+
 // imageModel builds a grid-only model with thumbnails enabled and the
-// image plumbing connected to test channels.
-func imageModel(t *testing.T, root string, entries []browser.Entry) (*app.Model, <-chan []kitty.Slot, *[]app.ThumbJob) {
+// image plumbing connected to a recording sink.
+func imageModel(t *testing.T, root string, entries []browser.Entry) (*app.Model, *recordingSink, *[]app.ThumbJob) {
 	t.Helper()
 
 	m := app.New(root, app.Options{Images: graphics.ModeOn})
 	m = gridOnly(t, resize(t, m, 120, 30))
 
-	sink := make(chan []kitty.Slot, 4)
+	sink := &recordingSink{}
 	m.SetImageSink(sink)
 
 	var jobs []app.ThumbJob
@@ -63,30 +81,8 @@ func imageEntry(root, name string, size int64, when time.Time) browser.Entry {
 	}
 }
 
-func testPNGs(t *testing.T, entries []browser.Entry) map[string][]byte {
-	t.Helper()
-
-	out := map[string][]byte{}
-	for _, e := range entries {
-		out[thumbs.KeyOf(thumbs.Entry{Path: e.Path, Size: e.Size, MtimeNanos: e.ModTime.UnixNano()})] = tinyPNG(t)
-	}
-
-	return out
-}
-
-// drainSlots reads every pending snapshot, returning the latest.
-func drainSlots(sink <-chan []kitty.Slot) []kitty.Slot {
-	var last []kitty.Slot
-	for {
-		select {
-		case s := <-sink:
-			last = s
-		default:
-			return last
-		}
-	}
-}
-
+// TestImageSlotsMatchCardGeometry pins that placements land exactly on
+// the card's inner label rows.
 func TestImageSlotsMatchCardGeometry(t *testing.T) {
 	t.Parallel()
 
@@ -98,17 +94,14 @@ func TestImageSlotsMatchCardGeometry(t *testing.T) {
 	}
 
 	m, sink, _ := imageModel(t, root, entries)
-	pngs := testPNGs(t, entries)
+	key := thumbs.KeyOf(thumbs.Entry{Path: entries[1].Path, Size: 999, MtimeNanos: when.UnixNano()})
 
 	// Deliver the generated thumbnail, then render: the next frame must
 	// ship exactly one slot, for the image entry.
-	m = feed(t, m, app.ThumbReadyMsg{
-		Key: thumbs.KeyOf(thumbs.Entry{Path: entries[1].Path, Size: 999, MtimeNanos: when.UnixNano()}),
-		PNG: pngs[thumbs.KeyOf(thumbs.Entry{Path: entries[1].Path, Size: 999, MtimeNanos: when.UnixNano()})],
-	})
+	m = feed(t, m, app.ThumbReadyMsg{Key: key, PNG: tinyPNG(t)})
 	m.View()
 
-	slots := drainSlots(sink)
+	slots := sink.last()
 	if len(slots) != 1 {
 		t.Fatalf("slots = %d, want 1", len(slots))
 	}
@@ -126,6 +119,9 @@ func TestImageSlotsMatchCardGeometry(t *testing.T) {
 	if len(s.PNG) == 0 {
 		t.Error("slot must carry the PNG payload")
 	}
+	if s.Key != key {
+		t.Errorf("slot key = %q, want the delivered key", s.Key)
+	}
 }
 
 func TestImageSlotsClearOnOverlay(t *testing.T) {
@@ -135,14 +131,13 @@ func TestImageSlotsClearOnOverlay(t *testing.T) {
 	when := time.Now()
 	entries := []browser.Entry{imageEntry(root, "pic.png", 10, when)}
 	m, sink, _ := imageModel(t, root, entries)
-	pngs := testPNGs(t, entries)
 
 	key := thumbs.KeyOf(thumbs.Entry{Path: entries[0].Path, Size: 10, MtimeNanos: when.UnixNano()})
-	m = feed(t, m, app.ThumbReadyMsg{Key: key, PNG: pngs[key]})
+	m = feed(t, m, app.ThumbReadyMsg{Key: key, PNG: tinyPNG(t)})
 
 	// Baseline: images flow.
 	m.View()
-	if slots := drainSlots(sink); len(slots) != 1 {
+	if slots := sink.last(); len(slots) != 1 {
 		t.Fatalf("baseline slots = %d, want 1", len(slots))
 	}
 
@@ -150,8 +145,31 @@ func TestImageSlotsClearOnOverlay(t *testing.T) {
 	// sync loop deletes every image the legend would cover.
 	m = press(t, m, "?")
 	m.View()
-	if slots := drainSlots(sink); len(slots) != 0 {
+	if slots := sink.last(); len(slots) != 0 {
 		t.Fatalf("overlay slots = %d, want none", len(slots))
+	}
+}
+
+// TestImageResetOnOpenAndResize pins the lifecycle: after an external
+// viewer runs or the terminal resizes, on-screen images can no longer be
+// trusted, so the model demands a full reset.
+func TestImageResetOnOpenAndResize(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	when := time.Now()
+	entries := []browser.Entry{imageEntry(root, "pic.png", 10, when)}
+	m, sink, _ := imageModel(t, root, entries)
+	baseline := sink.resets
+
+	m = feed(t, m, app.OpenFinishedMsg{RequestID: 0, Path: entries[0].Path})
+	if sink.resets != baseline+1 {
+		t.Fatalf("resets after open = %d, want %d", sink.resets, baseline+1)
+	}
+
+	m = resize(t, m, 100, 26)
+	if sink.resets != baseline+2 {
+		t.Fatalf("resets after resize = %d, want %d", sink.resets, baseline+2)
 	}
 }
 
@@ -177,6 +195,8 @@ func TestThumbLoaderRequestedForVisibleImages(t *testing.T) {
 	}
 }
 
+// TestImagesDisabledKeepsRenderingClean pins that a terminal without a
+// resolved protocol never receives graphics sequences.
 func TestImagesDisabledKeepsRenderingClean(t *testing.T) {
 	t.Setenv("TERM", "xterm-256color")
 	t.Setenv("KITTY_WINDOW_ID", "")
@@ -244,6 +264,29 @@ func TestImageSyncWritesAndClears(t *testing.T) {
 	if !strings.HasPrefix(out.String(), kitty.CursorSave) {
 		t.Error("output batches must be cursor-wrapped")
 	}
+}
+
+func TestImageSyncResetForcesRetransmit(t *testing.T) {
+	t.Parallel()
+
+	var out lockedBuffer
+	syncer := app.NewImageSync(&out, nil, 10, 20, func(app.ThumbReadyMsg) {})
+
+	png := tinyPNG(t)
+	syncer.Slots([]kitty.Slot{{Key: "a", PNG: png, Row: 3, Col: 2, Cols: 12, Rows: 2}})
+	waitFor(t, func() bool {
+		return strings.Count(out.String(), "f=100") == 1
+	})
+
+	// After a reset the same slot set must upload again: the terminal's
+	// image data can no longer be trusted.
+	syncer.Reset()
+	syncer.Slots([]kitty.Slot{{Key: "a", PNG: png, Row: 3, Col: 2, Cols: 12, Rows: 2}})
+	waitFor(t, func() bool {
+		return strings.Count(out.String(), "f=100") == 2
+	})
+
+	syncer.Stop()
 }
 
 func tinyPNG(t *testing.T) []byte {

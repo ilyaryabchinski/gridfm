@@ -11,6 +11,13 @@ import (
 // of high-resolution thumbnails plus headroom. Oldest keys evict first.
 const thumbReadyCap = 512
 
+// imageSink receives desired thumbnail placements and reset demands; the
+// real implementation ships them to the sync loop.
+type imageSink interface {
+	Slots([]kitty.Slot)
+	Reset()
+}
+
 // syncImages reconciles the desired thumbnail set with the sync loop and
 // requests generation for visible images that have none yet. It performs
 // no filesystem work: channel sends only, so View can call it every
@@ -20,8 +27,7 @@ func (m *Model) syncImages(l ui.Layout) {
 		return
 	}
 
-	slots := m.imageSlots(l)
-	m.imgSink <- slots
+	m.imgSink.Slots(m.imageSlots(l))
 
 	if m.thumbLoad == nil {
 		return

@@ -7,7 +7,6 @@ import (
 
 	"gridfm/internal/browser"
 	"gridfm/internal/graphics"
-	"gridfm/internal/graphics/kitty"
 	"gridfm/internal/operations"
 	"gridfm/internal/places"
 	"gridfm/internal/preview"
@@ -160,11 +159,11 @@ type Model struct {
 	// Help overlay state: the keyboard legend.
 	helpOpen bool
 
-	// Thumbnails. images names the resolved protocol; the sink ships
-	// desired slot lists to the ImageSync goroutine; ready holds
-	// generated PNGs keyed like the loader requests (bounded FIFO).
+	// Thumbnails. images names the resolved protocol; imgSink receives
+	// desired placement lists and reset demands; ready holds generated
+	// PNGs keyed like the loader requests (bounded FIFO).
 	images     graphics.Protocol
-	imgSink    chan<- []kitty.Slot
+	imgSink    imageSink
 	thumbReady map[string][]byte
 	thumbKeys  []string
 	thumbLoad  func(ThumbJob)
@@ -259,12 +258,12 @@ func (m *Model) ImageProtocol() (graphics.Protocol, bool) {
 	return m.images, m.images != ""
 }
 
-// SetImageSink wires the channel that receives desired thumbnail
-// placements. Only meaningful when a protocol resolved; main connects it
-// to the ImageSync goroutine.
-func (m *Model) SetImageSink(ch chan<- []kitty.Slot) {
+// SetImageSink wires the destination for desired thumbnail placements.
+// Only meaningful when a protocol resolved; main connects it to the
+// ImageSync goroutine.
+func (m *Model) SetImageSink(sink imageSink) {
 	if m.images != "" {
-		m.imgSink = ch
+		m.imgSink = sink
 	}
 }
 

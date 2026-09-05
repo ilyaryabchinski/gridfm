@@ -48,6 +48,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.syncGridColumns()
 		m.clampScroll()
+		// Terminals scramble on-screen images when resized; re-upload
+		// from scratch rather than trusting stale placements.
+		if m.imgSink != nil {
+			m.imgSink.Reset()
+		}
 
 		return m, nil
 
@@ -301,6 +306,12 @@ func (m *Model) applyOpenFinished(msg OpenFinishedMsg) (tea.Model, tea.Cmd) {
 		m.note = note
 
 		return m, nil
+	}
+
+	// The external program may have left the terminal's image state
+	// garbage; re-upload from scratch on the next frame.
+	if m.imgSink != nil {
+		m.imgSink.Reset()
 	}
 
 	refresh := loadDirectoryCmd(m.startRequest(), m.browser.Path)

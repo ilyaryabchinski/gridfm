@@ -9,11 +9,6 @@ import (
 	"gridfm/internal/thumbs"
 )
 
-// cellPixels is the assumed terminal cell size when the terminal does not
-// report one, in pixels: a common 10x20 default close enough for
-// thumbnail sharpness.
-var cellPixels = [2]int{10, 20}
-
 // ThumbJob asks the loader for one thumbnail. Cols and Rows are the
 // coverage in terminal cells; the loader converts to pixels using the
 // terminal's real cell size.
@@ -33,19 +28,30 @@ type ThumbReadyMsg struct {
 	PNG []byte
 }
 
+// imgUpdate is one instruction for the sync loop: either a desired
+// placement set or a reset demand. Everything is serialized through one
+// channel so the table is only ever touched by the loop.
+type imgUpdate struct {
+	slots []kitty.Slot
+	reset bool
+}
+
 // ImageSync owns everything that must not race the render loop: the
 // kitty placement table (the truth about what is on screen), the writes
 // of protocol bytes, and bounded thumbnail generation. The model only
 // ships immutable slot lists and job requests.
 type ImageSync struct {
 	mu       sync.Mutex
-	ch       chan []kitty.Slot
+	ch       chan imgUpdate
 	jobs     chan ThumbJob
 	inFlight map[string]bool
 	notify   func(ThumbReadyMsg)
 	store    *thumbs.Store
 	limits   thumbs.Limits
 	quitting bool
+	// cellW and cellH are the terminal cell size in pixels used to size
+	// generated thumbnails.
+	cellW, cellH int
 
 	table *kitty.Table
 	out   io.Writer
@@ -55,12 +61,13 @@ type ImageSync struct {
 // called from worker goroutines with each finished thumbnail — wire it to
 // Program.Send. store may be nil for a memory-only setup (tests).
 func NewImageSync(out io.Writer, store *thumbs.Store, cellW, cellH int, notify func(ThumbReadyMsg)) *ImageSync {
-	if cellW > 0 && cellH > 0 {
-		cellPixels = [2]int{cellW, cellH}
+	if cellW <= 0 || cellH <= 0 {
+		// Terminals that do not report a pixel size get a common default.
+		cellW, cellH = 10, 20
 	}
 
 	s := &ImageSync{
-		ch:       make(chan []kitty.Slot, 1),
+		ch:       make(chan imgUpdate, 1),
 		jobs:     make(chan ThumbJob, 256),
 		inFlight: map[string]bool{},
 		notify:   notify,
@@ -68,6 +75,8 @@ func NewImageSync(out io.Writer, store *thumbs.Store, cellW, cellH int, notify f
 		limits:   thumbs.Default,
 		table:    kitty.NewTable(),
 		out:      out,
+		cellW:    cellW,
+		cellH:    cellH,
 	}
 
 	go s.loop()
@@ -78,29 +87,37 @@ func NewImageSync(out io.Writer, store *thumbs.Store, cellW, cellH int, notify f
 	return s
 }
 
-// Slots ships a desired placement set. Never blocks: the latest snapshot
-// wins.
-func (s *ImageSync) Slots(slots []kitty.Slot) {
+// ship queues an update, never blocking: the latest one wins.
+func (s *ImageSync) ship(u imgUpdate) {
+	s.mu.Lock()
+	quitting := s.quitting
+	s.mu.Unlock()
+	if quitting {
+		return
+	}
+
 	select {
-	case s.ch <- slots:
+	case s.ch <- u:
 	default:
-		// The single buffer is full: replace its stale snapshot.
+		// The single buffer is full: replace its stale entry.
 		select {
 		case <-s.ch:
 		default:
 		}
 		select {
-		case s.ch <- slots:
+		case s.ch <- u:
 		default:
 		}
 	}
 }
 
-// SlotChan returns the channel the model ships desired placement sets to.
-func (s *ImageSync) SlotChan() chan<- []kitty.Slot { return s.ch }
+// Slots ships a desired placement set.
+func (s *ImageSync) Slots(slots []kitty.Slot) { s.ship(imgUpdate{slots: slots}) }
 
-// Load requests thumbnail generation for one entry; repeated requests for
-// the same key while one is in flight are dropped. Results arrive via
+// Reset demands the terminal's graphics state be treated as garbage.
+func (s *ImageSync) reset() { s.ship(imgUpdate{reset: true}) }
+
+// Load requests thumbnail generation for one entry; repeated requests for// the same key while one is in flight are dropped. Results arrive via
 // notify as ThumbReadyMsg.
 func (s *ImageSync) Load(job ThumbJob) {
 	s.mu.Lock()
@@ -122,8 +139,15 @@ func (s *ImageSync) Load(job ThumbJob) {
 	}
 }
 
+// Reset tells the sync loop the terminal's graphics state is no longer
+// trustworthy — an external viewer ran, or the terminal was resized — so
+// it drops every table assumption and re-uploads from scratch on the
+// next frame.
+func (s *ImageSync) Reset() { s.ship(imgUpdate{reset: true}) }
+
 // Stop clears every on-screen image and shuts the loops down. Safe to
-// call once.
+// call once; called after the program loop has exited, so no more Ships
+// arrive.
 func (s *ImageSync) Stop() {
 	s.mu.Lock()
 	if s.quitting {
@@ -134,15 +158,24 @@ func (s *ImageSync) Stop() {
 	s.quitting = true
 	s.mu.Unlock()
 
-	close(s.jobs)
-	s.Slots(nil)
+	close(s.jobs) // workers drain and exit
+	close(s.ch)   // loop drains pending updates and exits
 	s.write(kitty.EncodeDeleteAll())
 }
 
 // loop serializes protocol output and keeps the table as screen truth.
 func (s *ImageSync) loop() {
-	for slots := range s.ch {
-		payload, err := s.table.Sync(slots)
+	for u := range s.ch {
+		if u.reset {
+			// The screen's images are garbage: delete everything and
+			// forget every upload so the next sync re-transmits.
+			s.write(kitty.EncodeDeleteAll())
+			s.table = kitty.NewTable()
+
+			continue
+		}
+
+		payload, err := s.table.Sync(u.slots)
 		if err != nil || len(payload) == 0 {
 			continue
 		}
@@ -186,8 +219,8 @@ func (s *ImageSync) generate(job ThumbJob) []byte {
 		}
 	}
 
-	boxW := job.Cols * cellPixels[0]
-	boxH := job.Rows * cellPixels[1]
+	boxW := job.Cols * s.cellW
+	boxH := job.Rows * s.cellH
 	raw, err := thumbs.Generate(job.Path, boxW, boxH, s.limits)
 	if err != nil {
 		return nil
