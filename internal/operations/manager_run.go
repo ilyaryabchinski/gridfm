@@ -113,7 +113,7 @@ func itemPath(item Item) string {
 // the copy primitives.
 type itemReporter struct {
 	m      *Manager
-	ctx    context.Context
+	ctx    context.Context //nolint:containedctx // the job owns its cancellation lifetime
 	opID   string
 	kind   Kind
 	done   int
@@ -159,7 +159,7 @@ func finish(result Result, op Operation, accounts int) Result {
 
 // runItem dispatches one item to its mutation primitive. report receives
 // cumulative byte progress for kinds that copy bytes.
-func runItem(ctx context.Context, kind Kind, item Item, resolve conflictResolver, report func(done, total int64)) error {
+func runItem(ctx context.Context, kind Kind, item Item, resolve conflictResolver, report progressFn) error {
 	switch kind {
 	case OpCopy:
 		return copyEntry(ctx, item.Source, item.Target, resolve, report)

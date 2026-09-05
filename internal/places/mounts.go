@@ -29,7 +29,7 @@ func parseMounts(r io.Reader) []Place {
 
 	seen := map[string]bool{}
 	var out []Place
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 3 {
 			continue
@@ -58,7 +58,7 @@ func parseMounts(r io.Reader) []Place {
 // full path for shallow points like /mnt.
 func baseLabel(point string) string {
 	base := point
-	for _, part := range strings.Split(strings.Trim(point, "/"), "/") {
+	for part := range strings.SplitSeq(strings.Trim(point, "/"), "/") {
 		if part != "" {
 			base = part
 		}

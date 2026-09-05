@@ -14,7 +14,7 @@ const thumbReadyCap = 512
 // imageSink receives desired thumbnail placements and reset demands; the
 // real implementation ships them to the sync loop.
 type imageSink interface {
-	Slots([]kitty.Slot)
+	Slots(slots []kitty.Slot)
 	Reset()
 }
 
@@ -43,7 +43,7 @@ func (m *Model) syncImages(l ui.Layout) {
 			Size:       e.Size,
 			MtimeNanos: e.ModTime.UnixNano(),
 			Cols:       l.Card.Width - 2,
-			Rows:       imageRows(l),
+			Rows:       thumbRows,
 		})
 	}
 }
@@ -90,7 +90,7 @@ func (m *Model) imageSlots(l ui.Layout) []kitty.Slot {
 				Row:  2 + r*(l.Card.Height+ui.CardGapY) + 1,
 				Col:  docked + 1 + c*(l.Card.Width+ui.CardGapX) + 1,
 				Cols: l.Card.Width - 2,
-				Rows: imageRows(l),
+				Rows: thumbRows,
 			})
 		}
 	}
@@ -98,11 +98,9 @@ func (m *Model) imageSlots(l ui.Layout) []kitty.Slot {
 	return slots
 }
 
-// imageRows is the thumbnail's coverage in cell rows: the two inner rows
+// thumbRows is the thumbnail's coverage in cell rows: the two inner rows
 // above the name line on a normal card.
-func imageRows(l ui.Layout) int {
-	return 2
-}
+const thumbRows = 2
 
 // entryAtGrid returns the visible entry rendered at viewport grid
 // position (r, c), mirroring renderViewport's index math.

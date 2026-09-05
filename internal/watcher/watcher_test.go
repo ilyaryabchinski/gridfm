@@ -42,7 +42,7 @@ func TestDebounceCollapsesBurstIntoOneEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 	if err := w.Watch(dir); err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestWatchSwitchDropsOldDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 	if err := w.Watch(old); err != nil {
 		t.Fatal(err)
 	}
@@ -103,9 +103,9 @@ func TestWatchSwitchDropsOldDirectory(t *testing.T) {
 func TestWatchSwitchOnAliasKeepsEvents(t *testing.T) {
 	t.Parallel()
 
-	real := t.TempDir()
+	realDir := t.TempDir()
 	alias := filepath.Join(t.TempDir(), "alias")
-	if err := os.Symlink(real, alias); err != nil {
+	if err := os.Symlink(realDir, alias); err != nil {
 		t.Fatal(err)
 	}
 
@@ -113,8 +113,8 @@ func TestWatchSwitchOnAliasKeepsEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer w.Close()
-	if err := w.Watch(real); err != nil {
+	defer func() { _ = w.Close() }()
+	if err := w.Watch(realDir); err != nil {
 		t.Fatal(err)
 	}
 	if err := w.Watch(alias); err != nil {
@@ -124,7 +124,7 @@ func TestWatchSwitchOnAliasKeepsEvents(t *testing.T) {
 		t.Fatalf("path = %q, want %q", w.Path(), alias)
 	}
 
-	if err := os.WriteFile(filepath.Join(real, "through-alias"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(realDir, "through-alias"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	ev := expectEvent(t, w)
@@ -133,14 +133,14 @@ func TestWatchSwitchOnAliasKeepsEvents(t *testing.T) {
 	}
 
 	// Switching back to the real path keeps working too.
-	if err := w.Watch(real); err != nil {
+	if err := w.Watch(realDir); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(real, "back-again"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(realDir, "back-again"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if ev := expectEvent(t, w); ev.Path != real {
-		t.Fatalf("event path = %q, want %q", ev.Path, real)
+	if ev := expectEvent(t, w); ev.Path != realDir {
+		t.Fatalf("event path = %q, want %q", ev.Path, realDir)
 	}
 }
 
@@ -153,13 +153,13 @@ func TestWatchSwitchOnAliasKeepsEvents(t *testing.T) {
 func TestWatchSurvivesMultipleAliases(t *testing.T) {
 	t.Parallel()
 
-	real := t.TempDir()
+	realDir := t.TempDir()
 	alias1 := filepath.Join(t.TempDir(), "alias1")
 	alias2 := filepath.Join(t.TempDir(), "alias2")
-	if err := os.Symlink(real, alias1); err != nil {
+	if err := os.Symlink(realDir, alias1); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(real, alias2); err != nil {
+	if err := os.Symlink(realDir, alias2); err != nil {
 		t.Fatal(err)
 	}
 	other := t.TempDir()
@@ -168,8 +168,8 @@ func TestWatchSurvivesMultipleAliases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer w.Close()
-	if err := w.Watch(real); err != nil {
+	defer func() { _ = w.Close() }()
+	if err := w.Watch(realDir); err != nil {
 		t.Fatal(err)
 	}
 	if err := w.Watch(alias1); err != nil {
@@ -181,7 +181,7 @@ func TestWatchSurvivesMultipleAliases(t *testing.T) {
 
 	// fsnotify labels events with the registration spelling (real), so a
 	// write must still surface even though only aliases were browsed since.
-	if err := os.WriteFile(filepath.Join(real, "deep-alias"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(realDir, "deep-alias"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if ev := expectEvent(t, w); ev.Path != alias2 {
@@ -193,7 +193,7 @@ func TestWatchSurvivesMultipleAliases(t *testing.T) {
 	if err := w.Watch(other); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(real, "abandoned"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(realDir, "abandoned"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	expectSilence(t, w)
@@ -214,7 +214,7 @@ func TestSameWatchIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 	if err := w.Watch(dir); err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func TestFailedWatchDoesNotCommitPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 
 	if err := w.Watch(filepath.Join(dir, "ghost")); err == nil {
 		t.Fatal("watching a missing directory must fail")
@@ -299,7 +299,7 @@ func TestErrorSurfaced(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := newWith(notify, 10*time.Millisecond)
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 	if err := w.Watch(t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
@@ -324,7 +324,7 @@ func TestOverflowBecomesChangeHint(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := newWith(notify, 10*time.Millisecond)
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 	if err := w.Watch(dir); err != nil {
 		t.Fatal(err)
 	}

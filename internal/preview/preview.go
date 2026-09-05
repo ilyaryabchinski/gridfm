@@ -5,6 +5,8 @@
 package preview
 
 import (
+	"bytes"
+
 	"errors"
 	"fmt"
 	"io"
@@ -112,7 +114,7 @@ func readPreview(path string) ([]string, bool, error) {
 	if n == 0 {
 		return nil, false, nil // empty file: nothing to preview
 	}
-	if strings.ContainsRune(string(head), 0) {
+	if bytes.ContainsRune(head, 0) {
 		return nil, false, nil // binary
 	}
 

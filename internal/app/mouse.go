@@ -12,13 +12,6 @@ import (
 // as a double click.
 const doubleClickWindow = 500 * time.Millisecond
 
-// lastClick remembers the previous left press for double-click detection.
-type lastClick struct {
-	at time.Time
-	x  int
-	y  int
-}
-
 // applyMouse routes one mouse event. Coordinates are terminal cells,
 // zero-based as Bubble Tea reports them. Motion and release events are
 // ignored: hovering does nothing, so the interface stays keyboard-first.
@@ -39,6 +32,8 @@ func (m *Model) applyMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m.wheel(ev, 1)
 		case tea.MouseButtonLeft:
 			return m.mouseLeftClick(ev)
+		default:
+			// Middle click, side buttons, horizontal wheel: no binding.
 		}
 	}
 
@@ -148,6 +143,8 @@ func (m *Model) mouseLeftClick(ev tea.MouseEvent) (tea.Model, tea.Cmd) {
 		m.placeIdx = index
 
 		return m, nil
+	case RegionInspector, RegionNone:
+		// Not clickable; nothing to focus.
 	case RegionGrid:
 		m.region = RegionGrid
 		m.browser.SetFocusIndex(index)
@@ -202,7 +199,7 @@ func (m *Model) hitTest(l ui.Layout, x, y int) (Region, int, bool) {
 	}
 
 	if l.SidebarVisible && x < l.SidebarWidth {
-		if idx, ok := m.sidebarItemAt(l, y); ok {
+		if idx, ok := m.sidebarItemAt(y); ok {
 			return RegionSidebar, idx, true
 		}
 
@@ -245,7 +242,7 @@ func (m *Model) hitTest(l ui.Layout, x, y int) (Region, int, bool) {
 // index, mirroring RenderSidebar's line layout: one blank line plus a
 // header before each section's items. Content starts at row 1, below
 // the header row.
-func (m *Model) sidebarItemAt(l ui.Layout, y int) (int, bool) {
+func (m *Model) sidebarItemAt(y int) (int, bool) {
 	items := m.sidebarItems()
 	if len(items) == 0 {
 		return 0, false

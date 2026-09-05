@@ -43,6 +43,8 @@ func copyEntry(ctx context.Context, src, dst string, resolve conflictResolver, r
 		return ErrSkipped
 	case ConflictAbort:
 		return ErrAborted
+	case ConflictReplace:
+		// Keep the destination; the copy replaces it below.
 	case ConflictRename:
 		dst = UniqueName(dst)
 	}
@@ -142,7 +144,11 @@ func createSymlink(target, dst string) error {
 	return nil
 }
 
-func copyDir(ctx context.Context, src, dst string, info fs.FileInfo, resolve conflictResolver, report func(done, total int64)) error {
+type progressFn func(done, total int64)
+
+func copyDir(
+	ctx context.Context, src, dst string, info fs.FileInfo, resolve conflictResolver, report progressFn,
+) error {
 	// The destination is created owner-writable even when the source mode
 	// is read-only, so its children can be populated; the source mode is
 	// restored only after the contents are in place. An existing
@@ -201,7 +207,7 @@ func copyDir(ctx context.Context, src, dst string, info fs.FileInfo, resolve con
 	return preserveTimes(src, dst)
 }
 
-func copyFile(ctx context.Context, src, dst string, info fs.FileInfo, action ConflictAction, report func(done, total int64)) error {
+func copyFile(ctx context.Context, src, dst string, info fs.FileInfo, action ConflictAction, report progressFn) error {
 	//nolint:gosec // paths come from user-selected entries; this is a file manager
 	srcFile, err := os.Open(src)
 	if err != nil {

@@ -121,10 +121,7 @@ func RenderInspectorOverlay(gridFrame string, width int, info *preview.Info, loa
 			continue
 		}
 
-		leftWidth := ansi.StringWidth(gridLine) - width
-		if leftWidth < 0 {
-			leftWidth = 0
-		}
+		leftWidth := max(ansi.StringWidth(gridLine)-width, 0)
 		out = append(out, ansiCut(gridLine, leftWidth)+panelLines[i])
 	}
 

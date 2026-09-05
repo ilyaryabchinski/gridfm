@@ -53,7 +53,7 @@ func trashItem(ctx context.Context, src string, resolve conflictResolver, report
 
 // moveIntoTrash relocates the source into its reserved trash slot: rename
 // on the same filesystem, copy-then-remove across filesystems.
-func moveIntoTrash(ctx context.Context, src, dst string, resolve conflictResolver, report func(done, total int64)) error {
+func moveIntoTrash(ctx context.Context, src, dst string, resolve conflictResolver, report progressFn) error {
 	err := renameFn(src, dst)
 	if errors.Is(err, errCrossDevice) {
 		copyErr := copyEntry(ctx, src, dst, resolve, report)

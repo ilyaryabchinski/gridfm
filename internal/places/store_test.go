@@ -71,6 +71,8 @@ func TestLoadLinesSkipsCommentsAndBlanks(t *testing.T) {
 }
 
 func TestPlacesFromLinesSkipsVanishedPaths(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	keep := filepath.Join(dir, "keep")
 	if err := os.Mkdir(keep, 0o755); err != nil {

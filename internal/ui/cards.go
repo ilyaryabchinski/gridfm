@@ -146,7 +146,9 @@ func categoryStyle(c Category) lipgloss.Style {
 // the fully styled name renderer, reused by the compact branch so its
 // truncated name keeps the selected, dimmed, and focus styling. image
 // reserves the label rows on a normal card for a thumbnail.
-func cardLines(e browser.Entry, zoom ZoomLevel, innerWidth int, label, name string, styledName lipgloss.Style, image bool) []string {
+func cardLines(e browser.Entry, zoom ZoomLevel, innerWidth int,
+	label, name string, styledName lipgloss.Style, image bool,
+) []string {
 	switch zoom {
 	case ZoomCompact:
 		// Icon and truncated name share the single content line.

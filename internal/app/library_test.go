@@ -46,7 +46,6 @@ func runAndFeed(t *testing.T, m *app.Model, cmd tea.Cmd) *app.Model {
 	return feed(t, m, msg)
 }
 
-//nolint:paralleltest // t.Setenv mutates process env, so the test is serial
 func TestBookmarkAddRemovePersists(t *testing.T) {
 	root := t.TempDir()
 	sub := filepath.Join(root, "project")
@@ -105,7 +104,6 @@ func TestBookmarkAddRemovePersists(t *testing.T) {
 	}
 }
 
-//nolint:paralleltest // t.Setenv mutates process env, so the test is serial
 func TestRecentsTrackLoadedDirectories(t *testing.T) {
 	root := t.TempDir()
 	first := filepath.Join(root, "one")

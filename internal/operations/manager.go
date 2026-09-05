@@ -158,6 +158,8 @@ func validateOperation(op Operation) error {
 		// resolves to the process working directory, which would reject
 		// every operation at or beneath the launch location.
 		return ValidateDestinations(op.Items)
+	case OpCreateFile, OpCreateDir, OpTrash, OpDelete:
+		// Single-sided operations have no destination to validate.
 	}
 
 	return nil

@@ -143,13 +143,12 @@ func TestInspectorTracksWithRefreshedFocus(t *testing.T) {
 	// fresh request for A — inspectorPath must have moved to B during
 	// the refresh, otherwise this movement is suppressed as "already
 	// showing A".
-	next, cmd := m.Update(app.DirectoryLoadedMsg{RequestID: 1, Path: root, Entries: []browser.Entry{
+	m = feed(t, m, app.DirectoryLoadedMsg{RequestID: 1, Path: root, Entries: []browser.Entry{
 		{Name: "a.txt", Path: a},
 		{Name: "b.txt", Path: b},
 	}})
-	m = next.(*app.Model)
 
-	next, cmd = m.Update(keyMsg("h")) // focus moves left, back to a.txt
+	_, cmd := m.Update(keyMsg("h")) // focus moves left, back to a.txt
 	var asked bool
 	for _, msg := range runBatch(t, cmd) {
 		if loaded, ok := msg.(app.InspectorLoadedMsg); ok && loaded.Path == a {

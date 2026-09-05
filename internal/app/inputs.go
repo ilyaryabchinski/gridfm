@@ -13,7 +13,7 @@ import (
 // key, or the quit key, all honoring remapping.
 func (m *Model) handleSortKeys(key string) (tea.Model, tea.Cmd) {
 	switch {
-	case key == keyEsc || m.binds.action(key) == "sort" || m.binds.action(key) == "quit":
+	case key == keyEsc || m.binds.action(key) == "sort" || m.binds.action(key) == actionQuit:
 		m.sortOpen = false
 
 		return m, nil

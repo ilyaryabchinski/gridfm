@@ -2,7 +2,6 @@ package places
 
 import (
 	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,7 +46,7 @@ func LoadLines(name string) []string {
 	}
 
 	var lines []string
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -70,10 +69,13 @@ func SaveLines(name string, lines []string) error {
 		return err
 	}
 
-	content := "# gridfm " + name + ": one path per line\n"
+	var b strings.Builder
+	b.WriteString("# gridfm " + name + ": one path per line\n")
 	for _, line := range lines {
-		content += line + "\n"
+		b.WriteString(line)
+		b.WriteString("\n")
 	}
+	content := b.String()
 
 	tmp, err := os.CreateTemp(dir, name+".tmp*")
 	if err != nil {
@@ -82,7 +84,7 @@ func SaveLines(name string, lines []string) error {
 	defer os.Remove(tmp.Name()) //nolint:errcheck // no-op after a successful rename
 
 	if _, err := tmp.WriteString(content); err != nil {
-		tmp.Close() //nolint:errcheck // the write error is the one reported
+		_ = tmp.Close()
 
 		return err
 	}
@@ -133,11 +135,4 @@ func labelForPath(path string) string {
 	}
 
 	return path
-}
-
-// exists reports whether the path is present on disk. Used by tests.
-func exists(path string) bool {
-	_, err := os.Stat(path)
-
-	return !errors.Is(err, fs.ErrNotExist)
 }

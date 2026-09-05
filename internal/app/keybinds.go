@@ -6,6 +6,9 @@ import (
 	"gridfm/internal/config"
 )
 
+// actionQuit names the quit action across dispatch, overlays, and legend.
+const actionQuit = "quit"
+
 // keybinds resolves keys to actions. Out of the box every action owns its
 // default keys; a configured override replaces that action's bindings
 // with the single configured key. Dispatch switches on the action, never

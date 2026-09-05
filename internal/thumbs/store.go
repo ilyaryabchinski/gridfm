@@ -39,7 +39,7 @@ func (s *Store) Get(e Entry) ([]byte, bool) {
 	defer s.mu.Unlock()
 
 	name := s.file(e)
-	raw, err := os.ReadFile(name)
+	raw, err := os.ReadFile(name) //nolint:gosec // the name is a hashed cache file we wrote
 	if err != nil {
 		return nil, false
 	}

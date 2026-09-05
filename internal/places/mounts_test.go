@@ -18,7 +18,7 @@ tmpfs /tmp tmpfs rw 0 0
 /dev/sda1 /run/media/user/Backup exfat rw 0 0
 tmpfs /run/user/1000 tmpfs rw 0 0
 cgroup /sys/fs/cgroup cgroup2 rw 0 0
-overlay / overlay overlay rw 0 0
+overlay / overlay rw 0 0
 /dev/sdb1 /mnt/with\040space ntfs3 rw 0 0
 /dev/sdb1 /mnt/with\040space ntfs3 rw 0 0
 `)

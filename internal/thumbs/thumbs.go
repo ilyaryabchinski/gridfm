@@ -18,11 +18,16 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "image/gif" // register decoders
+	// Blank imports register the image decoders the standard library
+	// dispatches to by sniffs of the file header.
+	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
 
 	"golang.org/x/image/draw"
+
+	// The webp decoder is decode-only, like the stdlib registrations
+	// above; thumbnails never re-encode webp.
 	_ "golang.org/x/image/webp"
 )
 
@@ -69,14 +74,14 @@ func Generate(path string, boxW, boxH int, limits Limits) ([]byte, error) {
 		return nil, fmt.Errorf("%w: %s is %d bytes", ErrTooLarge, filepath.Base(path), info.Size())
 	}
 
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) //nolint:gosec // the path is the user's own image
 	if err != nil {
 		return nil, fmt.Errorf("thumbnail source: %w", err)
 	}
 
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %v", ErrFormat, filepath.Base(path), err)
+		return nil, fmt.Errorf("%w: %s: %w", ErrFormat, filepath.Base(path), err)
 	}
 	if int64(cfg.Width)*int64(cfg.Height) > limits.MaxPixels {
 		return nil, fmt.Errorf("%w: %s declares %dx%d", ErrTooLarge, filepath.Base(path), cfg.Width, cfg.Height)
@@ -121,8 +126,8 @@ func fitInto(w, h, boxW, boxH int) (int, int) {
 func Key(path string, size int64, mtimeNanos int64) string {
 	h := sha256.New()
 	var buf [16]byte
-	binary.LittleEndian.PutUint64(buf[:8], uint64(size))
-	binary.LittleEndian.PutUint64(buf[8:], uint64(mtimeNanos))
+	binary.LittleEndian.PutUint64(buf[:8], uint64(size))       //nolint:gosec // sizes and times are non-negative
+	binary.LittleEndian.PutUint64(buf[8:], uint64(mtimeNanos)) //nolint:gosec // sizes and times are non-negative
 	_, _ = h.Write(buf[:])
 	_, _ = h.Write([]byte(path))
 

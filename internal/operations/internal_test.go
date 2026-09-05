@@ -80,7 +80,7 @@ func SwapRenameForTest(f func(from, to string) error) func() {
 // been queried more than `after` times, making traversal cancellation
 // deterministic: each directory entry checks Err exactly once.
 type cancelAfter struct {
-	context.Context
+	context.Context //nolint:containedctx // stub context for the fake job
 
 	after   int
 	queries int
@@ -97,7 +97,7 @@ func (c *cancelAfter) Err() error {
 
 // TestRemoveAllStopsWhenCancelled pins that a cancelled delete stops
 // walking: entries after the cancellation point survive.
-func TestRemoveAllStopsWhenCancelled(t *testing.T) {
+func TestRemoveAllStopsWhenCancelled(t *testing.T) { //nolint:paralleltest // swaps the package rename hook
 	dir := t.TempDir()
 	tree := filepath.Join(dir, "tree")
 	if mkdirErr := os.Mkdir(tree, 0o755); mkdirErr != nil {
@@ -144,6 +144,8 @@ func TestRemoveAllStopsWhenCancelled(t *testing.T) {
 // TestRemoveAllTreatsMissingAsDone pins RemoveAll parity: a missing path
 // is a successful no-op.
 func TestRemoveAllTreatsMissingAsDone(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	if err := removeAll(context.Background(), filepath.Join(dir, "ghost")); err != nil {
 		t.Errorf("removing a missing path = %v, want nil", err)

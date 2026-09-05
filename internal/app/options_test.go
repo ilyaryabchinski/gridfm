@@ -12,6 +12,8 @@ import (
 // model: hidden files, sort mode, and the panel toggles all apply at
 // start.
 func TestOptionsShapeStartState(t *testing.T) {
+	t.Parallel()
+
 	f := false
 	tr := true
 

@@ -200,7 +200,7 @@ func (m *Model) renderHelpOverlay(l ui.Layout) string {
 		{"e", "last result"},
 		{"esc", "clear / close"},
 		{m.KeyFor("help"), "this legend"},
-		{m.KeyFor("quit"), "quit"},
+		{m.KeyFor(actionQuit), actionQuit},
 	})
 
 	left := lipgloss.JoinVertical(lipgloss.Left, navigate, "", view)

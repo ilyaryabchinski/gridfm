@@ -16,6 +16,10 @@ type Protocol string
 // Ghostty. It is currently the only backend.
 const ProtocolKitty Protocol = "kitty"
 
+// modeAuto is the string form of ModeAuto, shared by parsing, display,
+// and defaults.
+const modeAuto = "auto"
+
 // Mode is the user's preference for terminal graphics.
 type Mode int
 
@@ -33,7 +37,7 @@ const (
 // ParseMode maps a flag value to a Mode.
 func ParseMode(s string) (Mode, error) {
 	switch s {
-	case "auto":
+	case modeAuto:
 		return ModeAuto, nil
 	case "on":
 		return ModeOn, nil
@@ -51,9 +55,11 @@ func (m Mode) String() string {
 		return "on"
 	case ModeOff:
 		return "off"
-	default:
-		return "auto"
+	case ModeAuto:
+		return modeAuto
 	}
+
+	return modeAuto
 }
 
 // Detect reports which graphics protocol the running terminal speaks,
@@ -107,7 +113,9 @@ func Resolve(mode Mode, env func(string) string) (Protocol, bool) {
 		return "", false
 	case ModeOn:
 		return ProtocolKitty, true
-	default:
+	case ModeAuto:
 		return Detect(env)
 	}
+
+	return "", false
 }

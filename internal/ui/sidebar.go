@@ -78,7 +78,9 @@ func RenderSidebar(width, height int, items []SidebarItem, selected int, focused
 // RenderSidebarOverlay draws the sidebar floating over a grid frame: the
 // sidebar lines replace the leftmost cells of each grid line. Overlay lines
 // are cut with ANSI awareness so styling survives.
-func RenderSidebarOverlay(gridFrame string, sidebarWidth int, items []SidebarItem, selected int, operations []string) string {
+func RenderSidebarOverlay(
+	gridFrame string, sidebarWidth int, items []SidebarItem, selected int, operations []string,
+) string {
 	panel := RenderSidebar(sidebarWidth, strings.Count(gridFrame, "\n")+1, items, selected, true, operations)
 	panelLines := strings.Split(panel, "\n")
 	gridLines := strings.Split(gridFrame, "\n")

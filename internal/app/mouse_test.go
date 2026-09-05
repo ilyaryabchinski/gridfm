@@ -221,8 +221,8 @@ func TestMouseWheelScrollsOnlyTheGrid(t *testing.T) {
 		{"status bar", 40, 29},
 	}
 	for _, tc := range nonGrid {
-		next, _ := m.Update(wheelAt(true, tc.x, tc.y))
-		got := next.(*app.Model).View()
+		wheeled, _ := m.Update(wheelAt(true, tc.x, tc.y))
+		got := wheeled.(*app.Model).View()
 		if got != gridAfterBaseline {
 			t.Errorf("wheel over the %s must not scroll the grid", tc.name)
 		}
@@ -320,23 +320,23 @@ func TestMouseFloatingSidebarOccludesGrid(t *testing.T) {
 	root := t.TempDir()
 	// 60 wide is below the narrow threshold: toggling the sidebar floats
 	// it over the grid. Start with it off so the first click lands.
-	m := app.New(root, app.Options{Mouse: true, Sidebar: boolPtr(false)})
+	m := app.New(root, app.Options{Mouse: true, Sidebar: new(false)})
 	m = resize(t, m, 60, 30)
 	m = loaded(t, m, 1, root, entriesAt(root, 10), nil)
 
-	next, _ := m.Update(click(2, 2)) // real card: focus moves
-	m = next.(*app.Model)
-	next, _ = m.Update(keyMsg("~")) // float the sidebar over the grid
-	m = next.(*app.Model)
-	next, _ = m.Update(click(2, 2)) // same cell, now covered
-	m = next.(*app.Model)
+	clicked, _ := m.Update(click(2, 2)) // real card: focus moves
+	m = clicked.(*app.Model)
+
+	floated, _ := m.Update(keyMsg("~")) // float the sidebar over the grid
+	m = floated.(*app.Model)
+
+	covered, _ := m.Update(click(2, 2)) // same cell, now covered
+	m = covered.(*app.Model)
 
 	if got := m.FocusedPath(); filepath.Base(got) != "entry-00.txt" {
 		t.Fatalf("a click on the floating panel must not reach the grid, got %q", got)
 	}
 }
-
-func boolPtr(v bool) *bool { return &v }
 
 // TestMouseDisabledByDefault pins that without the opt-in, mouse events
 // do nothing: a click on another card cannot move focus.

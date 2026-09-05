@@ -216,7 +216,7 @@ func (s *ImageSync) loop() {
 // never moves the real cursor away from where the TUI renderer expects
 // it.
 func (s *ImageSync) write(payload []byte) {
-	var buf []byte
+	buf := make([]byte, 0, len(kitty.CursorSave)+len(payload)+len(kitty.CursorRestore))
 	buf = append(buf, kitty.CursorSave...)
 	buf = append(buf, payload...)
 	buf = append(buf, kitty.CursorRestore...)

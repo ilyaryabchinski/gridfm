@@ -10,9 +10,9 @@ import (
 	"gridfm/internal/thumbs"
 )
 
-func entryAt(dir, name string, offset time.Duration) thumbs.Entry {
+func entryAt(name string, offset time.Duration) thumbs.Entry {
 	return thumbs.Entry{
-		Path:       filepath.Join(dir, name),
+		Path:       filepath.Join("/d", name),
 		Size:       123,
 		MtimeNanos: time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC).Add(offset).UnixNano(),
 	}
@@ -28,7 +28,7 @@ func TestStoreRoundtrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	e := entryAt("/d", "pic.png", 0)
+	e := entryAt("pic.png", 0)
 	if _, ok := s.Get(e); ok {
 		t.Fatal("an empty cache must miss")
 	}
@@ -48,7 +48,8 @@ func TestKeyBustsOnChange(t *testing.T) {
 
 	base := thumbs.Entry{Path: "/d/pic.png", Size: 10, MtimeNanos: 1}
 
-	if thumbs.KeyOf(base) != thumbs.KeyOf(base) {
+	first, second := thumbs.KeyOf(base), thumbs.KeyOf(base)
+	if first != second {
 		t.Fatal("the key must be deterministic")
 	}
 	for _, changed := range []thumbs.Entry{
@@ -71,9 +72,9 @@ func TestStoreEvictsOldestFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	first := entryAt("/d", "a.png", 0)
-	second := entryAt("/d", "b.png", time.Minute)
-	third := entryAt("/d", "c.png", 2*time.Minute)
+	first := entryAt("a.png", 0)
+	second := entryAt("b.png", time.Minute)
+	third := entryAt("c.png", 2*time.Minute)
 
 	for _, e := range []thumbs.Entry{first, second, third} {
 		if err := s.Put(e, pngBytes(64)); err != nil {
@@ -105,13 +106,13 @@ func TestStoreGetRefreshesRecency(t *testing.T) {
 	base := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	s.SetClockForTesting(func() time.Time { return base })
 
-	older := entryAt("/d", "old.png", 0)
-	newer := entryAt("/d", "new.png", 0)
-	if err := s.Put(older, pngBytes(64)); err != nil {
-		t.Fatal(err)
+	older := entryAt("old.png", 0)
+	newer := entryAt("new.png", 0)
+	if putErr := s.Put(older, pngBytes(64)); putErr != nil {
+		t.Fatal(putErr)
 	}
-	if err := s.Put(newer, pngBytes(64)); err != nil {
-		t.Fatal(err)
+	if putErr := s.Put(newer, pngBytes(64)); putErr != nil {
+		t.Fatal(putErr)
 	}
 
 	// Stage 2: the clock advances and a Get touches the older entry,
@@ -124,8 +125,8 @@ func TestStoreGetRefreshesRecency(t *testing.T) {
 	// Stage 3: a third entry arrives; the budget now evicts the true
 	// oldest — the untouched one — even though both were "first".
 	s.SetClockForTesting(func() time.Time { return base.Add(20 * time.Minute) })
-	if err := s.Put(entryAt("/d", "x.png", 0), pngBytes(64)); err != nil {
-		t.Fatal(err)
+	if putErr := s.Put(entryAt("x.png", 0), pngBytes(64)); putErr != nil {
+		t.Fatal(putErr)
 	}
 
 	if _, ok := s.Get(newer); ok {
@@ -134,7 +135,6 @@ func TestStoreGetRefreshesRecency(t *testing.T) {
 	if _, ok := s.Get(older); !ok {
 		t.Error("the touched entry should have survived")
 	}
-
 }
 
 func TestStoreSurvivesReopen(t *testing.T) {
@@ -146,14 +146,14 @@ func TestStoreSurvivesReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	e := entryAt("/d", "keep.png", 0)
-	if err := s.Put(e, pngBytes(32)); err != nil {
-		t.Fatal(err)
+	e := entryAt("keep.png", 0)
+	if putErr := s.Put(e, pngBytes(32)); putErr != nil {
+		t.Fatal(putErr)
 	}
 
-	reopened, err := thumbs.Open(dir, 1<<20)
-	if err != nil {
-		t.Fatal(err)
+	reopened, openErr := thumbs.Open(dir, 1<<20)
+	if openErr != nil {
+		t.Fatal(openErr)
 	}
 	if _, ok := reopened.Get(e); !ok {
 		t.Error("entries must survive a restart")
@@ -168,17 +168,17 @@ func TestStoreFilesAreOwnerOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Put(entryAt("/d", "perm.png", 0), pngBytes(32)); err != nil {
+	if err := s.Put(entryAt("perm.png", 0), pngBytes(32)); err != nil {
 		t.Fatal(err)
 	}
 
-	entries, err := os.ReadDir(dir)
-	if err != nil || len(entries) != 1 {
-		t.Fatalf("expected exactly one cache file, got %d (err %v)", len(entries), err)
+	entries, readErr := os.ReadDir(dir)
+	if readErr != nil || len(entries) != 1 {
+		t.Fatalf("expected exactly one cache file, got %d (err %v)", len(entries), readErr)
 	}
-	info, err := entries[0].Info()
-	if err != nil {
-		t.Fatal(err)
+	info, infoErr := entries[0].Info()
+	if infoErr != nil {
+		t.Fatal(infoErr)
 	}
 	if perm := info.Mode().Perm(); perm != 0o600 {
 		t.Errorf("cache file mode = %o, want 600", perm)

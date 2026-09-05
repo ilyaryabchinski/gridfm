@@ -23,7 +23,7 @@ func loadConfig() (config.Resolved, error) {
 	path, err := config.Path()
 	if err != nil {
 		// No resolvable home: run on defaults rather than refuse to start.
-		return config.Config{}.Resolve(), nil
+		return config.Config{}.Resolve(), nil //nolint:nilerr // deliberate fallback
 	}
 
 	cfg, err := config.Load(path)
@@ -77,17 +77,17 @@ func main() {
 	flag.Parse()
 
 	if *v {
-		fmt.Println(version)
+		fmt.Println(version) //nolint:forbidigo // printing is the feature
 
 		return
 	}
 
 	if *completions != "" {
-		script, err := completionFor(*completions)
-		if err != nil {
-			fatalf("%v", err)
+		script, scriptErr := completionFor(*completions)
+		if scriptErr != nil {
+			fatalf("%v", scriptErr)
 		}
-		fmt.Print(script)
+		fmt.Print(script) //nolint:forbidigo // printing is the feature
 
 		return
 	}
@@ -97,14 +97,14 @@ func main() {
 		start = flag.Arg(0)
 	}
 
-	mode, err := ui.ParseIconMode(*icons)
-	if err != nil {
-		fatalf("%v (want labels, unicode, or nerdfont)", err)
+	mode, modeErr := ui.ParseIconMode(*icons)
+	if modeErr != nil {
+		fatalf("%v (want labels, unicode, or nerdfont)", modeErr)
 	}
 
-	imageMode, err := graphics.ParseMode(*images)
-	if err != nil {
-		fatalf("%v", err)
+	imageMode, imageErr := graphics.ParseMode(*images)
+	if imageErr != nil {
+		fatalf("%v", imageErr)
 	}
 
 	if *sortBy != "" && !sortModeValid(*sortBy) {
@@ -114,9 +114,9 @@ func main() {
 		fatalf("invalid order %q (want asc or desc)", *order)
 	}
 
-	path, err := filepath.Abs(start)
-	if err != nil {
-		fatalf("resolve start location: %v", err)
+	absPath, absErr := filepath.Abs(start)
+	if absErr != nil {
+		fatalf("resolve start location: %v", absErr)
 	}
 
 	theme, err := ui.ThemeFromMap(cfg.Theme)
@@ -124,7 +124,7 @@ func main() {
 		fatalf("%v", err)
 	}
 
-	model := app.New(path, app.Options{
+	model := app.New(absPath, app.Options{
 		Icons:      mode,
 		Images:     imageMode,
 		Sidebar:    sidebar,

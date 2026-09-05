@@ -126,7 +126,7 @@ func TestSkipInsideMergeCopiesLaterSiblings(t *testing.T) {
 // TestCrossDeviceMoveKeepsSourceWhenChildSkipped pins the safety rule the
 // skip-continuation depends on: a partial copy (a skipped child) must never
 // trigger source removal.
-func TestCrossDeviceMoveKeepsSourceWhenChildSkipped(t *testing.T) {
+func TestCrossDeviceMoveKeepsSourceWhenChildSkipped(t *testing.T) { //nolint:paralleltest // swaps the package rename hook
 	srcDir := t.TempDir()
 	dstDir := t.TempDir()
 	src := filepath.Join(srcDir, "dir")

@@ -7,7 +7,7 @@ import "os"
 // Mounts returns the local-disk volumes currently mounted, read from
 // /proc/mounts. It never fails; unreadable tables yield nothing.
 func Mounts() []Place {
-	file, err := os.Open("/proc/mounts") //nolint:gosec // fixed kernel path
+	file, err := os.Open("/proc/mounts")
 	if err != nil {
 		return nil
 	}

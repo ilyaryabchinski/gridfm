@@ -1,6 +1,8 @@
 package app
 
 import (
+	"slices"
+
 	"errors"
 	"io/fs"
 	"os"
@@ -175,13 +177,7 @@ func (m *Model) requiresTypedConfirm(paths []string) bool {
 		return true
 	}
 
-	for _, p := range paths {
-		if m.pathIsDirectory(p) {
-			return true
-		}
-	}
-
-	return false
+	return slices.ContainsFunc(paths, m.pathIsDirectory)
 }
 
 // pathIsDirectory reports whether the path names a directory: from the

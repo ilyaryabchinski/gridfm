@@ -29,8 +29,8 @@ func testPNG(w, h int) []byte {
 func noisyPNG(w, h int) []byte {
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	lcg := uint32(12345)
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			lcg = lcg*1664525 + 1013904223
 			img.Set(x, y, color.RGBA{uint8(lcg >> 24), uint8(lcg >> 16), uint8(lcg >> 8), 0xff})
 		}
@@ -93,8 +93,8 @@ func TestEncodeTransmitChunksLongPayload(t *testing.T) {
 	// Reassemble the base64 across chunks and check round-trip.
 	var joined strings.Builder
 	for _, cmd := range commands {
-		if idx := strings.Index(cmd, ";"); idx >= 0 {
-			joined.WriteString(strings.TrimSuffix(cmd[idx+1:], "\x1b\\"))
+		if _, payload, ok := strings.Cut(cmd, ";"); ok {
+			joined.WriteString(strings.TrimSuffix(payload, "\x1b\\"))
 		}
 	}
 	decoded, err := base64.StdEncoding.DecodeString(joined.String())
@@ -140,8 +140,8 @@ func TestDeleteCommands(t *testing.T) {
 	}
 }
 
-func slot(key string, row, col int, png []byte) kitty.Slot {
-	return kitty.Slot{Key: key, PNG: png, Row: row, Col: col, Rows: 3, Cols: 8}
+func slot(key string, col int, png []byte) kitty.Slot {
+	return kitty.Slot{Key: key, PNG: png, Row: 2, Col: col, Rows: 3, Cols: 8}
 }
 
 func TestTableSyncPlacesAndReuses(t *testing.T) {
@@ -150,7 +150,7 @@ func TestTableSyncPlacesAndReuses(t *testing.T) {
 	tbl := kitty.NewTable()
 	pic := testPNG(20, 10)
 
-	out, err := tbl.Sync([]kitty.Slot{slot("a", 2, 2, pic)})
+	out, err := tbl.Sync([]kitty.Slot{slot("a", 2, pic)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestTableSyncPlacesAndReuses(t *testing.T) {
 	}
 
 	// Identical state produces no bytes at all.
-	out, err = tbl.Sync([]kitty.Slot{slot("a", 2, 2, pic)})
+	out, err = tbl.Sync([]kitty.Slot{slot("a", 2, pic)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestTableSyncPlacesAndReuses(t *testing.T) {
 
 	// The same content in a new cell reuses the upload (no f=100) and
 	// deletes the old placement only.
-	out, err = tbl.Sync([]kitty.Slot{slot("a", 2, 12, pic)})
+	out, err = tbl.Sync([]kitty.Slot{slot("a", 12, pic)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,14 +194,14 @@ func TestTableSyncMovesAndClearsUp(t *testing.T) {
 	tbl := kitty.NewTable()
 	a, b := testPNG(20, 10), testPNG(10, 10)
 
-	if _, err := tbl.Sync([]kitty.Slot{slot("a", 2, 2, a), slot("b", 2, 12, b)}); err != nil {
+	if _, err := tbl.Sync([]kitty.Slot{slot("a", 2, a), slot("b", 12, b)}); err != nil {
 		t.Fatal(err)
 	}
 
 	// b scrolls off; a stays. b's placement must be deleted and its
 	// image data freed since nothing else uses it. The exact ids depend
 	// on allocation order, so only the delete kinds are asserted.
-	out, err := tbl.Sync([]kitty.Slot{slot("a", 2, 2, a)})
+	out, err := tbl.Sync([]kitty.Slot{slot("a", 2, a)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,7 @@ func TestTableSyncMovesAndClearsUp(t *testing.T) {
 	}
 
 	// After clear, the same content uploads fresh (ids restart at 1).
-	out, err = tbl.Sync([]kitty.Slot{slot("a", 2, 2, a)})
+	out, err = tbl.Sync([]kitty.Slot{slot("a", 2, a)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,13 +238,13 @@ func TestTableSyncReplacesChangedGeometry(t *testing.T) {
 	tbl := kitty.NewTable()
 	pic := testPNG(20, 10)
 
-	if _, err := tbl.Sync([]kitty.Slot{slot("a", 2, 2, pic)}); err != nil {
+	if _, err := tbl.Sync([]kitty.Slot{slot("a", 2, pic)}); err != nil {
 		t.Fatal(err)
 	}
 
 	// Zoom changes the coverage but not the content: no retransmit, one
 	// replacement placement.
-	moved := slot("a", 2, 2, pic)
+	moved := slot("a", 2, pic)
 	moved.Cols, moved.Rows = 16, 6
 	out, err := tbl.Sync([]kitty.Slot{moved})
 	if err != nil {
@@ -264,8 +264,8 @@ func TestTableSyncRejectsOverlappingSlots(t *testing.T) {
 
 	tbl := kitty.NewTable()
 	if _, err := tbl.Sync([]kitty.Slot{
-		slot("a", 2, 2, testPNG(10, 10)),
-		slot("b", 2, 2, testPNG(10, 10)),
+		slot("a", 2, testPNG(10, 10)),
+		slot("b", 2, testPNG(10, 10)),
 	}); err == nil {
 		t.Fatal("two slots claiming one cell must be rejected")
 	}

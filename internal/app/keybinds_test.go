@@ -10,10 +10,10 @@ import (
 
 // remappedModel builds a model with quit bound to Q and the sort menu to
 // ctrl+s.
-func remappedModel(t *testing.T, root string) *app.Model {
+func remappedModel(t *testing.T) *app.Model {
 	t.Helper()
 
-	m := app.New(root, app.Options{
+	m := app.New("/d", app.Options{
 		Keys: config.Keymap{"quit": "Q", "sort": "ctrl+s"},
 	})
 
@@ -25,13 +25,13 @@ func remappedModel(t *testing.T, root string) *app.Model {
 func TestRemappedQuitReplacesDefault(t *testing.T) {
 	t.Parallel()
 
-	m := remappedModel(t, "/d")
+	m := remappedModel(t)
 
 	if _, cmd := m.Update(keyMsg("Q")); cmd == nil {
 		t.Error("the remapped quit key must quit")
 	}
 
-	m = remappedModel(t, "/d")
+	m = remappedModel(t)
 	if _, cmd := m.Update(keyMsg("q")); cmd != nil {
 		t.Error("the replaced default must no longer quit")
 	}
@@ -42,7 +42,7 @@ func TestRemappedQuitReplacesDefault(t *testing.T) {
 func TestUnremappedActionsKeepDefaults(t *testing.T) {
 	t.Parallel()
 
-	m := remappedModel(t, "/d")
+	m := remappedModel(t)
 
 	next, _ := m.Update(keyMsg("ctrl+s"))
 	m = next.(*app.Model)
@@ -57,7 +57,7 @@ func TestUnremappedActionsKeepDefaults(t *testing.T) {
 func TestSortMenuClosesWithRemappedKeys(t *testing.T) {
 	t.Parallel()
 
-	m := remappedModel(t, "/d")
+	m := remappedModel(t)
 	next, _ := m.Update(keyMsg("ctrl+s"))
 	m = next.(*app.Model)
 
@@ -89,7 +89,7 @@ func TestSortMenuClosesWithRemappedKeys(t *testing.T) {
 func TestLegendShowsRemappedKeys(t *testing.T) {
 	t.Parallel()
 
-	m := remappedModel(t, "/d")
+	m := remappedModel(t)
 	m = press(t, m, "?")
 	out := m.View()
 

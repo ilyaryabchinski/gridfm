@@ -11,7 +11,7 @@ import (
 
 // ownerGroup resolves the human names for an entry's owner and group,
 // falling back to the numeric ids when the lookup fails.
-func ownerGroup(path string, info os.FileInfo) (string, string) {
+func ownerGroup(_ string, info os.FileInfo) (string, string) {
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return "?", "?"

@@ -6,19 +6,19 @@ package kitty
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 )
 
-// Escape framing for the graphics protocol.
+// Escape framing for the graphics protocol. CursorSave and
+// CursorRestore bracket emission batches so image placement never
+// leaves the real cursor where the TUI renderer does not expect it.
 const (
 	// APC introduction and terminator wrap every graphics command.
 	apcStart = "\x1b_G"
 	apcEnd   = "\x1b\\"
 
-	// cursorSave and cursorRestore bracket emission batches so image
-	// placement never leaves the real cursor where bubbletea's renderer
-	// does not expect it.
 	CursorSave    = "\x1b7"
 	CursorRestore = "\x1b8"
 
@@ -32,16 +32,16 @@ const (
 )
 
 // pngDims reads the width and height from a PNG's IHDR chunk header.
-func pngDims(png []byte) (w, h int, err error) {
+func pngDims(png []byte) (int, int, error) {
 	const ihdrDims = 24 // 8 signature + 4 length + 4 type + 8 dims
 	if len(png) < ihdrDims {
-		return 0, 0, fmt.Errorf("png too short for dimensions")
+		return 0, 0, errors.New("png too short for dimensions")
 	}
 	if string(png[12:16]) != "IHDR" {
-		return 0, 0, fmt.Errorf("not a PNG IHDR chunk")
+		return 0, 0, errors.New("not a PNG IHDR chunk")
 	}
-	w = int(png[16])<<24 | int(png[17])<<16 | int(png[18])<<8 | int(png[19])
-	h = int(png[20])<<24 | int(png[21])<<16 | int(png[22])<<8 | int(png[23])
+	w := int(png[16])<<24 | int(png[17])<<16 | int(png[18])<<8 | int(png[19])
+	h := int(png[20])<<24 | int(png[21])<<16 | int(png[22])<<8 | int(png[23])
 	if w <= 0 || h <= 0 {
 		return 0, 0, fmt.Errorf("png declares invalid dimensions %dx%d", w, h)
 	}

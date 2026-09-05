@@ -74,9 +74,9 @@ func imageModel(t *testing.T, root string, entries []browser.Entry) (*app.Model,
 	return m, sink, &jobs
 }
 
-func imageEntry(root, name string, size int64, when time.Time) browser.Entry {
+func imageEntry(root string, size int64, when time.Time) browser.Entry {
 	return browser.Entry{
-		Name: name, Path: filepath.Join(root, name),
+		Name: "pic.png", Path: filepath.Join(root, "pic.png"),
 		Size: size, ModTime: when,
 	}
 }
@@ -90,7 +90,7 @@ func TestImageSlotsMatchCardGeometry(t *testing.T) {
 	when := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	entries := []browser.Entry{
 		{Name: "doc.txt", Path: filepath.Join(root, "doc.txt")},
-		imageEntry(root, "pic.png", 999, when),
+		imageEntry(root, 999, when),
 	}
 
 	m, sink, _ := imageModel(t, root, entries)
@@ -129,7 +129,7 @@ func TestImageSlotsClearOnOverlay(t *testing.T) {
 
 	root := t.TempDir()
 	when := time.Now()
-	entries := []browser.Entry{imageEntry(root, "pic.png", 10, when)}
+	entries := []browser.Entry{imageEntry(root, 10, when)}
 	m, sink, _ := imageModel(t, root, entries)
 
 	key := thumbs.KeyOf(thumbs.Entry{Path: entries[0].Path, Size: 10, MtimeNanos: when.UnixNano()})
@@ -158,7 +158,7 @@ func TestImageResetOnOpenAndResize(t *testing.T) {
 
 	root := t.TempDir()
 	when := time.Now()
-	entries := []browser.Entry{imageEntry(root, "pic.png", 10, when)}
+	entries := []browser.Entry{imageEntry(root, 10, when)}
 	m, sink, _ := imageModel(t, root, entries)
 	baseline := sink.resets
 
@@ -167,7 +167,7 @@ func TestImageResetOnOpenAndResize(t *testing.T) {
 		t.Fatalf("resets after open = %d, want %d", sink.resets, baseline+1)
 	}
 
-	m = resize(t, m, 100, 26)
+	resize(t, m, 100, 26)
 	if sink.resets != baseline+2 {
 		t.Fatalf("resets after resize = %d, want %d", sink.resets, baseline+2)
 	}
@@ -180,7 +180,7 @@ func TestThumbLoaderRequestedForVisibleImages(t *testing.T) {
 	when := time.Now()
 	entries := []browser.Entry{
 		{Name: "doc.txt", Path: filepath.Join(root, "doc.txt")},
-		imageEntry(root, "pic.png", 10, when),
+		imageEntry(root, 10, when),
 	}
 	_, _, jobs := imageModel(t, root, entries)
 

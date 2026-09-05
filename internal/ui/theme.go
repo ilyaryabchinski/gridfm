@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -108,12 +109,12 @@ func validColor(value string) error {
 			}
 		}
 
-		return fmt.Errorf("want #rgb or #rrggbb")
+		return errors.New("want #rgb or #rrggbb")
 	}
 
 	n, err := strconv.Atoi(value)
 	if err != nil || n < 0 || n > 255 {
-		return fmt.Errorf("want an ANSI color 0-255 or #hex")
+		return errors.New("want an ANSI color 0-255 or #hex")
 	}
 
 	return nil
@@ -122,11 +123,6 @@ func validColor(value string) error {
 // current is the active palette, replaced atomically: rendering runs on
 // its own goroutine while tests install themes concurrently.
 var current atomic.Pointer[Theme]
-
-func init() {
-	def := DefaultTheme()
-	current.Store(&def)
-}
 
 // SetTheme installs the palette used by all rendering.
 func SetTheme(t Theme) {
@@ -137,8 +133,15 @@ func SetTheme(t Theme) {
 	current.Store(&t)
 }
 
-// CurrentTheme returns the active palette.
-func CurrentTheme() Theme { return *current.Load() }
+// CurrentTheme returns the active palette, defaulting until SetTheme
+// installs a user's choice.
+func CurrentTheme() Theme {
+	if t := current.Load(); t != nil {
+		return *t
+	}
+
+	return DefaultTheme()
+}
 
 // CategoryColor returns the active color for a file-type category.
 func CategoryColor(c Category) lipgloss.Color {

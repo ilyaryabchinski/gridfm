@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	toml "github.com/BurntSushi/toml"
@@ -66,7 +67,7 @@ func Path() (string, error) {
 func Load(path string) (Config, error) {
 	var cfg Config
 
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) //nolint:gosec // the path comes from the user's own XDG config
 	if err != nil {
 		if os.IsNotExist(err) {
 			return cfg, nil
@@ -111,7 +112,7 @@ func (c Config) Validate() error {
 		}
 
 		return fmt.Errorf("config: invalid %s %q (want one of %s)",
-			rule.field, rule.have, join(rule.want))
+			rule.field, rule.have, strings.Join(rule.want, ", "))
 	}
 
 	return nil
@@ -173,25 +174,7 @@ func (c Config) Resolve() Resolved {
 }
 
 func contains(valid []string, have string) bool {
-	for _, v := range valid {
-		if v == have {
-			return true
-		}
-	}
-
-	return false
-}
-
-func join(values []string) string {
-	out := ""
-	for i, v := range values {
-		if i > 0 {
-			out += ", "
-		}
-		out += v
-	}
-
-	return out
+	return slices.Contains(valid, have)
 }
 
 // rejectUndecoded surfaces keys the struct does not know: a typo like

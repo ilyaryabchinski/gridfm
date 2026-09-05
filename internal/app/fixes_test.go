@@ -158,7 +158,7 @@ func TestApplyAllResetsBetweenJobs(t *testing.T) {
 	if strings.Contains(m.View(), "apply to all: ON") {
 		t.Error("apply-all must reset when the job finishes")
 	}
-	m = press(t, m, "s")
+	press(t, m, "s")
 	select {
 	case answer := <-second:
 		if answer.ApplyAll {

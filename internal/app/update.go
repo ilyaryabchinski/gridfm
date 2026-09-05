@@ -37,7 +37,6 @@ var (
 	keyEsc       = "esc"
 	keyTab       = "tab"
 	keyBackspace = "backspace"
-	keyHelp      = "?"
 )
 
 // Update routes messages to handlers. It never performs filesystem I/O.
@@ -471,7 +470,7 @@ func (m *Model) handleKey(key string) (tea.Model, tea.Cmd) {
 // hidden grid shortcuts never fire while it is up. The legend closes on
 // esc, its own key, or the quit key — all honoring remapping.
 func (m *Model) handleHelpKeys(key string) (tea.Model, tea.Cmd) {
-	if key == keyEsc || m.binds.action(key) == "help" || m.binds.action(key) == "quit" {
+	if key == keyEsc || m.binds.action(key) == "help" || m.binds.action(key) == actionQuit {
 		m.helpOpen = false
 	}
 

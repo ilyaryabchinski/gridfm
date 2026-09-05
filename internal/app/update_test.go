@@ -22,12 +22,12 @@ var errTestLoad = errors.New("permission denied")
 var errTestEscape = errors.New("esc \x1b[31mred")
 
 // feed applies a message to the model and returns the updated model.
-func feed(t testing.TB, m tea.Model, msg tea.Msg) *app.Model {
-	t.Helper()
+func feed(tb testing.TB, m tea.Model, msg tea.Msg) *app.Model {
+	tb.Helper()
 	next, _ := m.Update(msg)
 	updated, ok := next.(*app.Model)
 	if !ok {
-		t.Fatalf("Update returned %T, want *app.Model", next)
+		tb.Fatalf("Update returned %T, want *app.Model", next)
 	}
 
 	return updated
@@ -79,16 +79,16 @@ func pressBackspace(t *testing.T, m *app.Model) *app.Model {
 	return feed(t, m, tea.KeyMsg{Type: tea.KeyBackspace})
 }
 
-func resize(t testing.TB, m *app.Model, w, h int) *app.Model {
-	t.Helper()
+func resize(tb testing.TB, m *app.Model, w, h int) *app.Model {
+	tb.Helper()
 
-	return feed(t, m, tea.WindowSizeMsg{Width: w, Height: h})
+	return feed(tb, m, tea.WindowSizeMsg{Width: w, Height: h})
 }
 
-func loaded(t testing.TB, m *app.Model, requestID uint64, path string, entries []browser.Entry, err error) *app.Model {
-	t.Helper()
+func loaded(tb testing.TB, m *app.Model, requestID uint64, path string, entries []browser.Entry, err error) *app.Model {
+	tb.Helper()
 
-	return feed(t, m, app.DirectoryLoadedMsg{RequestID: requestID, Path: path, Entries: entries, Err: err})
+	return feed(tb, m, app.DirectoryLoadedMsg{RequestID: requestID, Path: path, Entries: entries, Err: err})
 }
 
 func entriesAt(base string, count int) []browser.Entry {

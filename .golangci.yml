@@ -33,12 +33,44 @@ linters:
     - wsl_v5
     # Audits string literals for untranslated locales; this project is not localized.
     - gosmopolitan
+    # Message routers are inherently branchy: Bubble Tea's Update dispatch and
+    # hit-testing switch on event vocabulary by design. Refactoring them into
+    # artificial tables would obscure the routing they exist to show.
+    - cyclop
+    - funlen
+    # User-facing messages are inherently dynamic (paths, keys, mode names),
+    # and errors crossing the user boundary are wrapped at the edges that
+    # own the context. Demanding sentinel errors everywhere would trade
+    # clarity for ceremony.
+    - err113
+    - wrapcheck
+    # `if err := f(); err != nil` is idiomatic Go; this linter prefers a
+    # two-statement form and fights the codebase style throughout.
+    - noinlineerr
+    # Blank-line-before-return placement; whitespace-adjacent taste rules
+    # that gofmt and revive do not already cover.
+    - nlreturn
+    # Package-level static vocabulary (key tables, palettes, limits) is a
+    # deliberate pattern here; each site would otherwise carry a nolint.
+    - gochecknoglobals
+    # White-box tests for rendering and plumbing internals are deliberate;
+    # not everything under internal/ needs the black-box ceremony.
+    - testpackage
+    # Tests may assert via unchecked type assertions: a wrong type panics
+    # and fails the test, which is exactly the outcome we want.
+    - forcetypeassert
+    # Demands constructors before setters before unexported helpers; purely
+    # mechanical ordering that fights the read-order of the file for no
+    # behavioral gain.
+    - funcorder
   enable:
     # Successor of the deprecated gomodguard linter that ships in `default: all`.
     - gomodguard_v2
   settings:
     # Bubble Tea's programming model is built on returning the tea.Model
     # interface from Update; returning concrete models is not possible there.
+    exhaustive:
+      default-signifies-exhaustive: true
     ireturn:
       allow:
         - error

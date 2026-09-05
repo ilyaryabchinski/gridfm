@@ -20,8 +20,8 @@ func writeTestImage(t *testing.T, dir, name string, w, h int) string {
 	t.Helper()
 
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			img.Set(x, y, color.RGBA{uint8(x * 255 / w), uint8(y * 255 / h), 0x80, 0xff})
 		}
 	}
@@ -31,7 +31,7 @@ func writeTestImage(t *testing.T, dir, name string, w, h int) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if err := png.Encode(f, img); err != nil {
 		t.Fatal(err)
 	}
@@ -119,6 +119,11 @@ func TestGenerateRejectsNonImages(t *testing.T) {
 	}
 }
 
+var (
+	ihdrType = []byte("IHDR")
+	idatType = []byte("IDAT")
+)
+
 // fakePNGHeader crafts a minimal PNG whose IHDR declares the given
 // dimensions, followed by a truncated body. image.DecodeConfig reads only
 // the header, which is exactly what the pixel guard must do before any
@@ -137,7 +142,7 @@ func fakePNGHeader(w, h uint32) []byte {
 	ihdr[12] = 0 // interlace
 
 	buf.Write([]byte{0, 0, 0, 13})
-	buf.Write([]byte("IHDR"))
+	buf.Write(ihdrType)
 	buf.Write(ihdr)
 	crc := crc32.ChecksumIEEE(append([]byte("IHDR"), ihdr...))
 	buf.Write([]byte{byte(crc >> 24), byte(crc >> 16), byte(crc >> 8), byte(crc)})
@@ -145,9 +150,9 @@ func fakePNGHeader(w, h uint32) []byte {
 	// One empty IDAT chunk; DecodeConfig never reaches it.
 	var body bytes.Buffer
 	z := zlib.NewWriter(&body)
-	z.Close()
+	_ = z.Close()
 	buf.Write([]byte{0, 0, 0, byte(body.Len())})
-	buf.Write([]byte("IDAT"))
+	buf.Write(idatType)
 	buf.Write(body.Bytes())
 
 	return buf.Bytes()
