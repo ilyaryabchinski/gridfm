@@ -168,7 +168,7 @@ func (m *Model) renderHelpOverlay(l ui.Layout) string {
 	navigate := helpColumn("navigate", []binding{
 		{"arrows h j k l", "move"},
 		{"enter / " + m.KeyFor("open"), "open"},
-		{"backspace / h", "parent (at edge)"},
+		{"backspace", "parent directory"},
 		{"alt+left/right", "history"},
 		{"pgup / pgdn", "page"},
 		{"home / end", "first/last"},

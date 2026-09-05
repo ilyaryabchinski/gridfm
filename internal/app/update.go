@@ -774,13 +774,14 @@ func (m *Model) openFocused() (tea.Model, tea.Cmd) {
 // openFile builds the command for opening a single file.
 
 // handleMovement applies spatial navigation keys for the focused region.
+// Movement never doubles as navigation: a blocked move is a no-op, and
+// the parent is reached only through backspace.
 func (m *Model) handleMovement(key string) (tea.Model, tea.Cmd) {
 	if m.region == RegionSidebar {
 		return m.movePlaceCursor(key)
 	}
 
-	moved, parentShortcut := m.moveFocus(key)
-	if moved {
+	if m.moveFocus(key) {
 		if m.mode == ModeSelect {
 			m.browser.SelectRange(m.anchorIndex(), m.browser.FocusIndex())
 		}
@@ -792,9 +793,6 @@ func (m *Model) handleMovement(key string) (tea.Model, tea.Cmd) {
 		}
 
 		return m, follow
-	}
-	if parentShortcut {
-		return m.goToParent()
 	}
 
 	return m, nil
@@ -817,34 +815,32 @@ func (m *Model) movePlaceCursor(key string) (tea.Model, tea.Cmd) {
 }
 
 // moveFocus applies the movement bound to key, mutating the browser in
-// place, and reports whether focus changed. The second result reports
-// whether the key doubles as the parent-directory shortcut when blocked.
+// place, and reports whether focus changed. A move that runs out of grid
+// simply does nothing.
 //
 // It must use a pointer receiver: with a value receiver the movement would
 // land in a copy of the model and silently vanish.
-func (m *Model) moveFocus(key string) (bool, bool) {
+func (m *Model) moveFocus(key string) bool {
 	switch key {
 	case keyLeft, "h":
-		left := m.browser.Left()
-
-		return left, true
+		return m.browser.Left()
 	case keyRight, "l":
-		return m.browser.Right(), false
+		return m.browser.Right()
 	case keyUp, "k":
-		return m.browser.Up(), false
+		return m.browser.Up()
 	case keyDown, "j":
-		return m.browser.Down(), false
+		return m.browser.Down()
 	case keyPgUp:
-		return m.browser.PageUp(m.rowsVisible()), false
+		return m.browser.PageUp(m.rowsVisible())
 	case keyPgDown:
-		return m.browser.PageDown(m.rowsVisible()), false
+		return m.browser.PageDown(m.rowsVisible())
 	case keyHome:
-		return m.browser.Home(), false
+		return m.browser.Home()
 	case keyEnd:
-		return m.browser.End(), false
+		return m.browser.End()
 	}
 
-	return false, false
+	return false
 }
 
 // goToParent navigates to the parent directory. At the filesystem root it

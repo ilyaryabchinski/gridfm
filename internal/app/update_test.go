@@ -3,6 +3,7 @@ package app_test
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -525,5 +526,44 @@ func TestFinishedEventRearmsOperationListener(t *testing.T) {
 	}
 	if len(batch) != 2 {
 		t.Fatalf("batch has %d commands, want refresh + operation listener (2)", len(batch))
+	}
+}
+
+// TestLeftEdgeHIsANoOp pins that h and left at the left edge do nothing:
+// movement never doubles as navigation, so the parent is reached only
+// through backspace.
+func TestLeftEdgeHIsANoOp(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	sub := filepath.Join(root, "sub")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	m := gridOnly(t, resize(t, app.New(sub, app.Options{}), 80, 24))
+	m = loaded(t, m, 1, sub, entriesAt(sub, 3), nil)
+	before := m.Path()
+
+	next, _ := m.Update(keyMsg("h"))
+	m = next.(*app.Model)
+	if m.Path() != before {
+		t.Fatalf("h at the left edge navigated to %q, want no movement", m.Path())
+	}
+	if m.IsLoading() {
+		t.Fatal("h at the left edge must not start a parent load")
+	}
+
+	next, _ = m.Update(keyMsg("left"))
+	m = next.(*app.Model)
+	if m.Path() != before {
+		t.Fatalf("left at the left edge navigated to %q, want no movement", m.Path())
+	}
+
+	// Backspace remains the parent shortcut.
+	next, _ = m.Update(keyMsg("backspace"))
+	m = next.(*app.Model)
+	if !m.IsLoading() && m.Path() == before {
+		t.Fatal("backspace should navigate to the parent")
 	}
 }
