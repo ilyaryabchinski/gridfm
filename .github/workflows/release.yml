@@ -24,13 +24,16 @@ jobs:
       - name: Build release artifacts
         run: make release VERSION="${GITHUB_REF_NAME}"
 
-      # The build uses normalized tar metadata and gzip -n behavior via
-      # tar -czf with fixed mtimes, so re-running on the same tree and
-      # tag produces identical bytes.
+      # Reproducibility needs a cross-build comparison: rebuild and
+      # diff against the FIRST build's checksums. Checking regenerated
+      # checksums would compare a build with itself.
       - name: Verify reproducibility
         run: |
+          cp dist/checksums.txt /tmp/first-build.txt
           make release VERSION="${GITHUB_REF_NAME}"
-          cd dist && sha256sum -c checksums.txt
+          cd dist
+          sha256sum -c checksums.txt
+          diff /tmp/first-build.txt checksums.txt
 
       - name: Release
         uses: softprops/action-gh-release@v2

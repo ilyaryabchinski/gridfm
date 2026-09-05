@@ -20,21 +20,27 @@ type lastClick struct {
 }
 
 // applyMouse routes one mouse event. Coordinates are terminal cells,
-// 1-based as reported by SGR mouse mode. Motion and release events are
+// zero-based as Bubble Tea reports them. Motion and release events are
 // ignored: hovering does nothing, so the interface stays keyboard-first.
 func (m *Model) applyMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if !m.mouseOn {
+		// The program only enables capture when configured, but a stale
+		// event after a config change must stay inert.
+		return m, nil
+	}
+
 	ev := tea.MouseEvent(msg)
 
 	if ev.Action == tea.MouseActionPress {
 		switch ev.Button {
 		case tea.MouseButtonWheelUp:
 			m.scrollRow--
-			m.clampScroll()
+			m.clampScrollBounds()
 
 			return m, nil
 		case tea.MouseButtonWheelDown:
 			m.scrollRow++
-			m.clampScroll()
+			m.clampScrollBounds()
 
 			return m, nil
 		case tea.MouseButtonLeft:
@@ -47,14 +53,25 @@ func (m *Model) applyMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 // mouseLeftClick focuses whatever sits under the pointer; ctrl-click
 // toggles the entry's selection instead; a second click on the same
-// entry inside the double-click window opens it.
+// entry inside the double-click window opens it. Focus changes follow
+// the keyboard contract: an open inspector clears and reloads for the
+// newly focused entry.
 func (m *Model) mouseLeftClick(ev tea.MouseEvent) (tea.Model, tea.Cmd) {
 	l := m.layout()
 
 	if ev.Ctrl {
-		if region, index, ok := m.hitTest(l, ev.X, ev.Y); ok && region == RegionGrid {
-			m.browser.SetFocusIndex(index)
-			m.browser.ToggleFocused()
+		region, index, ok := m.hitTest(l, ev.X, ev.Y)
+		if !ok || region != RegionGrid {
+			return m, nil
+		}
+
+		m.region = RegionGrid
+		m.browser.SetFocusIndex(index)
+		m.browser.ToggleFocused()
+		m.clampScroll()
+
+		if m.inspectorOn {
+			return m, m.requestInspector()
 		}
 
 		return m, nil
@@ -74,6 +91,7 @@ func (m *Model) mouseLeftClick(ev tea.MouseEvent) (tea.Model, tea.Cmd) {
 	case RegionGrid:
 		m.region = RegionGrid
 		m.browser.SetFocusIndex(index)
+		m.clampScroll()
 
 		now := time.Now()
 		double := now.Sub(m.lastClickAt) <= doubleClickWindow &&
@@ -82,21 +100,48 @@ func (m *Model) mouseLeftClick(ev tea.MouseEvent) (tea.Model, tea.Cmd) {
 		if double {
 			return m.openFocused()
 		}
+
+		if m.inspectorOn {
+			return m, m.requestInspector()
+		}
 	}
 
 	return m, nil
 }
 
+// clampScrollBounds keeps the scroll window inside the content without
+// pulling it back to the focused row — the wheel scrolls freely, unlike
+// keyboard movement which always keeps focus in view.
+func (m *Model) clampScrollBounds() {
+	l := m.layout()
+	rows := (len(m.browser.Visible()) + l.Columns - 1) / l.Columns
+	maxOffset := max(rows-l.RowsVisible, 0)
+	m.scrollRow = min(max(m.scrollRow, 0), maxOffset)
+}
+
 // hitTest maps terminal coordinates to a focused region and item index.
-// The floating sidebar and inspector are not clickable: their cells
-// belong to the grid beneath them, and keyboard navigation already
-// covers them.
+// Floating sidebar and inspector panels occlude the grid: their cells
+// belong to the visible panel, never to the hidden cards beneath.
 func (m *Model) hitTest(l ui.Layout, x, y int) (Region, int, bool) {
 	if !l.Usable || m.loading || m.loadErr != nil || m.overlaysOpen() {
 		return RegionGrid, 0, false
 	}
 
-	if l.SidebarVisible && x >= 1 && x <= l.SidebarWidth {
+	// Floating panels draw over the grid in narrow mode; their
+	// rectangles swallow clicks instead of poking through.
+	if m.sidebarOn && !l.SidebarVisible {
+		if x < min(ui.SidebarWidth, l.ContentWidth) {
+			return RegionGrid, 0, false
+		}
+	}
+	if m.inspectorOn && l.InspectorWidth == 0 {
+		w := min(ui.InspectorWidth, l.ContentWidth)
+		if x >= l.ContentWidth-w {
+			return RegionGrid, 0, false
+		}
+	}
+
+	if l.SidebarVisible && x < l.SidebarWidth {
 		if idx, ok := m.sidebarItemAt(l, y); ok {
 			return RegionSidebar, idx, true
 		}
@@ -104,20 +149,24 @@ func (m *Model) hitTest(l ui.Layout, x, y int) (Region, int, bool) {
 		return RegionGrid, 0, false
 	}
 
-	gridX := 1
+	gridX := 0
 	if l.SidebarVisible {
-		gridX += l.SidebarWidth
+		gridX = l.SidebarWidth
 	}
 
-	// Content starts below the header row; cards tile with fixed gaps.
-	row := (y - 2) / (l.Card.Height + ui.CardGapY)
+	// The header occupies row 0; cards tile below it with fixed gaps.
+	if x < gridX || y < 1 {
+		return RegionGrid, 0, false
+	}
+
+	row := (y - 1) / (l.Card.Height + ui.CardGapY)
 	col := (x - gridX) / (l.Card.Width + ui.CardGapX)
 	if row < 0 || col < 0 || row >= l.RowsVisible || col >= l.Columns {
 		return RegionGrid, 0, false
 	}
 
 	// Reject clicks in the gaps between cards.
-	withinY := (y-2)%(l.Card.Height+ui.CardGapY) < l.Card.Height
+	withinY := (y-1)%(l.Card.Height+ui.CardGapY) < l.Card.Height
 	withinX := (x-gridX)%(l.Card.Width+ui.CardGapX) < l.Card.Width
 	if !withinY || !withinX {
 		return RegionGrid, 0, false
@@ -134,15 +183,15 @@ func (m *Model) hitTest(l ui.Layout, x, y int) (Region, int, bool) {
 
 // sidebarItemAt maps a y coordinate inside the docked sidebar to an item
 // index, mirroring RenderSidebar's line layout: one blank line plus a
-// header before each section's items.
+// header before each section's items. Content starts at row 1, below
+// the header row.
 func (m *Model) sidebarItemAt(l ui.Layout, y int) (int, bool) {
 	items := m.sidebarItems()
 	if len(items) == 0 {
 		return 0, false
 	}
 
-	// Body content starts below the header row.
-	line := y - 2
+	line := y - 1
 	if line < 0 {
 		return 0, false
 	}

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	toml "github.com/BurntSushi/toml"
 )
@@ -76,6 +77,10 @@ func Load(path string) (Config, error) {
 
 	if err := toml.Unmarshal(raw, &cfg); err != nil {
 		return cfg, fmt.Errorf("parse config %s: %w", path, err)
+	}
+
+	if err := rejectUndecoded(raw, &cfg); err != nil {
+		return cfg, err
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -187,4 +192,27 @@ func join(values []string) string {
 	}
 
 	return out
+}
+
+// rejectUndecoded surfaces keys the struct does not know: a typo like
+// show_hiden would otherwise load cleanly and do nothing, hiding from
+// the user forever — exactly what this package's error philosophy
+// forbids.
+func rejectUndecoded(raw []byte, cfg *Config) error {
+	md, err := toml.Decode(string(raw), cfg)
+	if err != nil {
+		return fmt.Errorf("parse config: %w", err)
+	}
+
+	undecoded := md.Undecoded()
+	if len(undecoded) == 0 {
+		return nil
+	}
+
+	names := make([]string, 0, len(undecoded))
+	for _, key := range undecoded {
+		names = append(names, key.String())
+	}
+
+	return fmt.Errorf("config: unknown key(s): %s (check spelling)", strings.Join(names, ", "))
 }

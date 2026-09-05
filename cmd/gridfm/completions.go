@@ -10,8 +10,10 @@ import (
 
 const bashCompletion = `# bash completion for gridfm
 _gridfm() {
-	local cur="${COMP_WORDS[COMP_WORDS - 1]}"
-	local prev="${COMP_WORDS[COMP_WORDS - 1 - 1]}"
+	# COMP_CWORD is the cursor position: completing mid-line must use the
+	# word before the cursor, not the last word on the line.
+	local cur="${COMP_WORDS[COMP_CWORD]}"
+	local prev="${COMP_WORDS[COMP_CWORD - 1]}"
 
 	case "$prev" in
 	-icons) COMPREPLY=($(compgen -W "labels unicode nerdfont" -- "$cur")); return ;;
@@ -28,7 +30,6 @@ _gridfm() {
 	fi
 
 	COMPREPLY=($(compgen -d -- "$cur")) # directories only
-	complete -o filenames -F _gridfm gridfm
 }
 complete -o filenames -F _gridfm gridfm
 `

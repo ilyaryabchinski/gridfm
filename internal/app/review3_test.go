@@ -41,6 +41,7 @@ func TestInspectorClearsWhenFocusedEntryVanishes(t *testing.T) {
 	t.Parallel()
 
 	m := inspectorFixture(t)
+	victim := filepath.Join(m.Path(), "notes.txt")
 
 	next, cmd := m.Update(app.DirectoryLoadedMsg{RequestID: 1, Path: m.Path(), Entries: nil})
 	m = next.(*app.Model)
@@ -53,6 +54,16 @@ func TestInspectorClearsWhenFocusedEntryVanishes(t *testing.T) {
 	}
 	if m.Inspector() != nil {
 		t.Fatalf("panel still shows %+v after the entry was removed", m.Inspector())
+	}
+
+	// A late result for the removed file must be rejected, not resurrect
+	// the deleted entry's metadata in the panel.
+	m = feed(t, m, app.InspectorLoadedMsg{
+		RequestID: m.InspectorRequestID() - 1, Path: victim,
+		Info: &preview.Info{Path: victim, Name: "notes.txt", Size: 2},
+	})
+	if m.Inspector() != nil {
+		t.Fatalf("a stale result resurrected the removed entry: %+v", m.Inspector())
 	}
 }
 

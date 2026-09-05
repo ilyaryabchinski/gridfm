@@ -98,3 +98,33 @@ func TestValidateAcceptsEmptyAsUnset(t *testing.T) {
 		t.Fatalf("empty config must validate, got %v", err)
 	}
 }
+
+func TestLoadRejectsUnknownKeys(t *testing.T) {
+	t.Parallel()
+
+	path := write(t, "show_hiden = true\nicons = \"labels\"\n")
+
+	_, err := config.Load(path)
+	if err == nil {
+		t.Fatal("a misspelled key must be rejected, not ignored")
+	}
+	if !strings.Contains(err.Error(), "show_hiden") {
+		t.Errorf("error %q must name the unknown key", err.Error())
+	}
+}
+
+func TestLoadAcceptsKnownSections(t *testing.T) {
+	t.Parallel()
+
+	path := write(t, `
+[keys]
+quit = "Q"
+
+[theme]
+accent = "12"
+`)
+
+	if _, err := config.Load(path); err != nil {
+		t.Fatalf("known sections must decode: %v", err)
+	}
+}

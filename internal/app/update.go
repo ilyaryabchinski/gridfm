@@ -373,9 +373,13 @@ func (m *Model) followInspector() tea.Cmd {
 // removed — the panel is invalid and is cleared instead.
 func (m *Model) refreshInspector() tea.Cmd {
 	if _, ok := m.browser.Focused(); !ok {
+		// The focused entry is gone. Clearing the panel is not enough:
+		// an inspect already in flight for the removed file would land
+		// and resurrect its metadata, so the request id must move too.
 		m.inspector = nil
 		m.inspectorErr = nil
 		m.inspectorPath = ""
+		m.inspectorReq++
 
 		return nil
 	}
