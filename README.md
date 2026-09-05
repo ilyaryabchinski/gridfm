@@ -148,6 +148,23 @@ make check   # vet + lint + test
 go test -race ./...
 ```
 
+## Performance
+
+Measured with `go test -bench . -benchmem` on a developer laptop
+(12 threads), against the plan's §11 budgets:
+
+| Benchmark | Result | Budget | |
+|---|---|---|---|
+| Directory load, 1,000 entries | 1.5 ms | 200 ms to first view | ✓ |
+| Directory load, 10,000 entries | 21 ms, ~6 MB | 100 MB resident | ✓ |
+| Sort 10,000 entries | 0.6 ms | — | |
+| Full frame, 1,000 entries (120x30) | 0.95 ms | 50 ms resize reflow | ✓ |
+| Movement key press + frame | 0.94 ms | 50 ms perceived | ✓ |
+| Resize + full repaint | 1.1 ms | 50 ms | ✓ |
+
+The rendering budget has ~50x headroom, which covers slower terminals
+where the bottleneck is the tty writer rather than the renderer.
+
 ## License
 
 See the repository license.

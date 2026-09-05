@@ -22,7 +22,7 @@ var errTestLoad = errors.New("permission denied")
 var errTestEscape = errors.New("esc \x1b[31mred")
 
 // feed applies a message to the model and returns the updated model.
-func feed(t *testing.T, m tea.Model, msg tea.Msg) *app.Model {
+func feed(t testing.TB, m tea.Model, msg tea.Msg) *app.Model {
 	t.Helper()
 	next, _ := m.Update(msg)
 	updated, ok := next.(*app.Model)
@@ -79,13 +79,13 @@ func pressBackspace(t *testing.T, m *app.Model) *app.Model {
 	return feed(t, m, tea.KeyMsg{Type: tea.KeyBackspace})
 }
 
-func resize(t *testing.T, m *app.Model, w, h int) *app.Model {
+func resize(t testing.TB, m *app.Model, w, h int) *app.Model {
 	t.Helper()
 
 	return feed(t, m, tea.WindowSizeMsg{Width: w, Height: h})
 }
 
-func loaded(t *testing.T, m *app.Model, requestID uint64, path string, entries []browser.Entry, err error) *app.Model {
+func loaded(t testing.TB, m *app.Model, requestID uint64, path string, entries []browser.Entry, err error) *app.Model {
 	t.Helper()
 
 	return feed(t, m, app.DirectoryLoadedMsg{RequestID: requestID, Path: path, Entries: entries, Err: err})
