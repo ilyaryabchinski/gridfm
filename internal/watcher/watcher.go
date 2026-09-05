@@ -7,6 +7,7 @@ package watcher
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -29,8 +30,12 @@ type Event struct {
 type Watcher struct {
 	delay time.Duration
 
-	mu     sync.Mutex
-	path   string
+	mu   sync.Mutex
+	path string
+	// prev is the previous path when the current watch was reached through
+	// a directory alias: the shared inotify watch may still report event
+	// paths under the old spelling.
+	prev   string
 	notify *fsnotify.Watcher
 
 	events chan Event
@@ -82,12 +87,40 @@ func (w *Watcher) Watch(path string) error {
 		return err
 	}
 
-	if w.path != "" {
-		_ = w.notify.Remove(w.path)
+	previous := w.path
+	if previous != "" && sameDirectory(previous, path) {
+		// On Linux an alias of the watched directory reuses the same
+		// inotify watch descriptor, so removing the previous path would
+		// kill the shared watch. Keep it and remember the old spelling:
+		// events may still arrive labeled under it.
+		w.prev = previous
+		w.path = path
+
+		return nil
 	}
+
+	if previous != "" {
+		_ = w.notify.Remove(previous)
+	}
+	w.prev = ""
 	w.path = path
 
 	return nil
+}
+
+// sameDirectory reports whether two paths name the same directory,
+// following symlinks on both sides.
+func sameDirectory(a, b string) bool {
+	infoA, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	infoB, err := os.Stat(b)
+	if err != nil {
+		return false
+	}
+
+	return os.SameFile(infoA, infoB)
 }
 
 // Path returns the currently watched directory, empty when none.
@@ -120,7 +153,7 @@ func (w *Watcher) loop() {
 			if !ok {
 				return
 			}
-			if w.current() == "" || filepath.Dir(ev.Name) != w.current() && ev.Name != w.current() {
+			if !w.watches(ev.Name) {
 				continue
 			}
 			// Restart the window: only silence publishes.
@@ -157,6 +190,27 @@ func (w *Watcher) current() string {
 	defer w.mu.Unlock()
 
 	return w.path
+}
+
+// watches reports whether a raw event's path belongs to the watched
+// directory, accepting the previous spelling while the watch was reached
+// through a directory alias.
+func (w *Watcher) watches(name string) bool {
+	cur := w.current()
+	if cur == "" {
+		return false
+	}
+	if dir := filepath.Dir(name); dir == cur || name == cur {
+		return true
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.prev == "" {
+		return false
+	}
+
+	return filepath.Dir(name) == w.prev || name == w.prev
 }
 
 // send delivers one event unless the watcher stopped or the consumer went

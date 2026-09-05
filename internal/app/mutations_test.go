@@ -148,9 +148,11 @@ func TestStageAndPasteCopyAcrossDirectories(t *testing.T) {
 	m = press(t, m, "p") // paste
 	waitFor(t, func() bool {
 		m.DrainEvents()
-		_, statErr := os.Stat(filepath.Join(dstDir, "a.txt"))
+		// The destination appears as soon as the copy creates it, before
+		// any content lands; only the full content proves completion.
+		data, statErr := os.ReadFile(filepath.Join(dstDir, "a.txt"))
 
-		return statErr == nil
+		return statErr == nil && string(data) == "content"
 	})
 	if got := mustRead(t, filepath.Join(dstDir, "a.txt")); got != "content" {
 		t.Errorf("copied content = %q", got)

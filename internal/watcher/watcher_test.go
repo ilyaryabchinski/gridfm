@@ -96,6 +96,54 @@ func TestWatchSwitchDropsOldDirectory(t *testing.T) {
 	}
 }
 
+// TestWatchSwitchOnAliasKeepsEvents pins the alias contract: switching the
+// watch to a symlink of the watched directory reuses the same inotify
+// watch, so the switch must not remove it — events keep flowing, and the
+// consumer hears about changes under the new spelling.
+func TestWatchSwitchOnAliasKeepsEvents(t *testing.T) {
+	t.Parallel()
+
+	real := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(real, alias); err != nil {
+		t.Fatal(err)
+	}
+
+	w, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	if err := w.Watch(real); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Watch(alias); err != nil {
+		t.Fatal(err)
+	}
+	if w.Path() != alias {
+		t.Fatalf("path = %q, want %q", w.Path(), alias)
+	}
+
+	if err := os.WriteFile(filepath.Join(real, "through-alias"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ev := expectEvent(t, w)
+	if ev.Path != alias {
+		t.Fatalf("event path = %q, want the browsed alias %q", ev.Path, alias)
+	}
+
+	// Switching back to the real path keeps working too.
+	if err := w.Watch(real); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(real, "back-again"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if ev := expectEvent(t, w); ev.Path != real {
+		t.Fatalf("event path = %q, want %q", ev.Path, real)
+	}
+}
+
 func TestSameWatchIsIdempotent(t *testing.T) {
 	t.Parallel()
 

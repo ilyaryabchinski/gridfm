@@ -54,13 +54,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case DirectoryLoadedMsg:
 		save, watch := m.applyDirectoryLoaded(msg)
 
-		// The refreshed listing may have moved focus to a different entry;
-		// the inspector follows it when open. The watcher only moves for
+		// The refreshed listing may have moved focus to a different entry,
+		// or changed the focused entry on disk under the same name; the
+		// inspector follows either when open. The watcher only moves for
 		// results that actually applied: a stale or failed load must never
 		// re-point it away from the browsed directory.
 		cmds := tea.Batch(save, watch)
 		if m.inspectorOn {
-			return m, tea.Batch(cmds, m.followInspector())
+			return m, tea.Batch(cmds, m.followInspectorAfterLoad(msg.Entries))
 		}
 
 		return m, cmds
@@ -314,6 +315,29 @@ func (m *Model) followInspector() tea.Cmd {
 	return m.requestInspector()
 }
 
+// followInspectorAfterLoad re-requests the panel after an applied
+// directory refresh. Besides focus movement, a refresh that changed the
+// focused entry on disk — an edit, a replace, new metadata — must refresh
+// the panel even when the name, and therefore the focus path, stayed the
+// same.
+func (m *Model) followInspectorAfterLoad(entries []browser.Entry) tea.Cmd {
+	p := m.browser.FocusedPath()
+	if p == m.inspectorPath && m.inspector != nil {
+		for _, e := range entries {
+			if e.Path != p {
+				continue
+			}
+			if e.ModTime.Equal(m.inspector.ModTime) {
+				return nil // same entry, unchanged on disk
+			}
+
+			break
+		}
+	}
+
+	return m.requestInspector()
+}
+
 // applyInspectorLoaded applies one inspector load, rejecting results that
 // no longer match the newest request.
 func (m *Model) applyInspectorLoaded(msg InspectorLoadedMsg) (tea.Model, tea.Cmd) {
@@ -536,6 +560,10 @@ func (m *Model) handleDisplayKeys(key string) (tea.Model, tea.Cmd) {
 		if !m.sidebarEffective() {
 			m.region = RegionGrid
 		}
+		// The panel changes the grid's width, so the navigation geometry
+		// must resynchronize exactly as it does for zoom changes.
+		m.syncGridColumns()
+		m.clampScroll()
 
 		return m, nil
 	case "s":
@@ -562,6 +590,10 @@ func (m *Model) handleDisplayKeys(key string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.inspectorOn = !m.inspectorOn
+		// Docking or removing the panel changes the grid's width, so the
+		// navigation geometry must resynchronize with the new layout.
+		m.syncGridColumns()
+		m.clampScroll()
 		if !m.inspectorOn {
 			// Closing drops the panel content and invalidates any load in
 			// flight.

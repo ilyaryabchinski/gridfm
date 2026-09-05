@@ -67,6 +67,12 @@ func copyEntry(ctx context.Context, src, dst string, resolve conflictResolver, r
 
 		return copyDir(ctx, src, dst, info, resolve, report)
 	default:
+		// Named pipes block forever in Open with no writer, and devices
+		// have nothing meaningful to copy: reject special entries before
+		// anything is opened. Symlinks and directories are handled above.
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("cannot copy %q: not a regular file", src)
+		}
 		// The source is opened before any replacement removal: an
 		// unreadable or vanished source must not destroy the destination.
 		return copyFile(ctx, src, dst, info, action, report)
@@ -156,6 +162,10 @@ func copyDir(ctx context.Context, src, dst string, info fs.FileInfo, resolve con
 		return fmt.Errorf("read dir %q: %w", src, err)
 	}
 
+	// A skipped child must not strand its later siblings: keep copying and
+	// report the partial outcome upward, so a directory merge can skip one
+	// conflicting entry yet still copy everything after it.
+	skipped := false
 	for _, entry := range entries {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return fmt.Errorf("copy %q interrupted: %w", src, ctxErr)
@@ -164,8 +174,21 @@ func copyDir(ctx context.Context, src, dst string, info fs.FileInfo, resolve con
 		childSrc := filepath.Join(src, entry.Name())
 		childDst := filepath.Join(dst, entry.Name())
 		if copyErr := copyEntry(ctx, childSrc, childDst, resolve, report); copyErr != nil {
+			if errors.Is(copyErr, ErrSkipped) {
+				skipped = true
+
+				continue
+			}
+
 			return copyErr
 		}
+	}
+
+	if skipped {
+		// The marker still matches ErrSkipped for result accounting, and a
+		// cross-device move treats any error as "do not remove the source",
+		// so a partially copied source always survives.
+		return fmt.Errorf("%w: some children of %q were skipped", ErrSkipped, src)
 	}
 
 	if created {
