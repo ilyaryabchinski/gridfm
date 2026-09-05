@@ -61,10 +61,13 @@ func (m *Model) wheel(ev tea.MouseEvent, dir int) (tea.Model, tea.Cmd) {
 }
 
 // regionAt reports which region owns a coordinate without requiring a
-// hit on an item: gaps between cards still belong to the grid.
+// hit on an item: gaps between cards still belong to the grid. Chrome
+// (header, status bar, operation shelf), blocking overlays, and states
+// without a real grid own nothing — none of them may scroll the grid
+// from underneath.
 func (m *Model) regionAt(l ui.Layout, x, y int) Region {
 	if !l.Usable || m.loading || m.loadErr != nil || m.overlaysOpen() {
-		return RegionGrid
+		return RegionNone
 	}
 
 	// Floating panels own their rectangles, like in hitTest.
@@ -80,19 +83,32 @@ func (m *Model) regionAt(l ui.Layout, x, y int) Region {
 		}
 	}
 
+	// Row 0 is the breadcrumbs header; the operation shelf and status
+	// bar own everything below the grid body.
+	bodyRows := l.ContentHeight
+	if m.opProgress != nil {
+		bodyRows--
+	}
+	if y < 1 || y-1 >= bodyRows {
+		return RegionNone
+	}
+
 	if l.SidebarVisible && x < l.SidebarWidth {
 		return RegionSidebar
+	}
+	if l.InspectorWidth > 0 && x >= l.ContentWidth-l.InspectorWidth {
+		return RegionInspector
 	}
 
 	gridX := 0
 	if l.SidebarVisible {
 		gridX = l.SidebarWidth
 	}
-	if y >= 1 && x >= gridX {
+	if x >= gridX {
 		return RegionGrid
 	}
 
-	return RegionGrid
+	return RegionNone
 }
 
 // mouseLeftClick focuses whatever sits under the pointer; ctrl-click

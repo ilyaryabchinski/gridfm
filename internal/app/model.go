@@ -28,6 +28,9 @@ const (
 	// RegionInspector is hit-test only: the inspector panel is never a
 	// keyboard focus region, but the mouse can address it.
 	RegionInspector
+	// RegionNone means the pointer is over chrome or a surface with no
+	// scroll state.
+	RegionNone
 )
 
 // Mode is the browsing mode: normal navigation or range selection.

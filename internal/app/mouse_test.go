@@ -34,12 +34,7 @@ func ctrlClick(x, y int) tea.MouseMsg {
 }
 
 func wheel(down bool) tea.MouseMsg {
-	b := tea.MouseButtonWheelUp
-	if down {
-		b = tea.MouseButtonWheelDown
-	}
-
-	return tea.MouseMsg{Action: tea.MouseActionPress, Button: b}
+	return wheelAt(down, 2, 3) // over the grid
 }
 
 // Card geometry at 120x30 grid-only, zero-based like Bubble Tea's mouse
@@ -190,8 +185,9 @@ func TestMouseWheelScrollsFreely(t *testing.T) {
 }
 
 // TestMouseWheelScrollsOnlyTheGrid pins that the wheel scrolls the region
-// under the pointer: over the docked sidebar or inspector the grid stays
-// put, matching the plan's mouse contract.
+// under the pointer and nothing else: grid gaps scroll, while the docked
+// sidebar, the docked inspector, the header, the status bar, and blocking
+// overlays all leave the grid alone.
 func TestMouseWheelScrollsOnlyTheGrid(t *testing.T) {
 	t.Parallel()
 
@@ -199,29 +195,50 @@ func TestMouseWheelScrollsOnlyTheGrid(t *testing.T) {
 	m := app.New(root, app.Options{Mouse: true})
 	m = resize(t, m, 120, 30)
 	m = loaded(t, m, 1, root, entriesAt(root, 30), nil)
-	next, _ := m.Update(wheelAt(true, 40, 5)) // over the grid: baseline scroll
+
+	// Dock the inspector: the grid shrinks to four columns, and thirty
+	// entries leave several rows of scroll room.
+	next, _ := m.Update(keyMsg("i"))
+	m = next.(*app.Model)
+
+	// Over the grid, in a gap between cards: scrolls.
+	next, _ = m.Update(wheelAt(true, 30, 5))
 	m = next.(*app.Model)
 	gridAfterBaseline := m.View()
-
-	// Over the docked sidebar: no scroll.
-	next, _ = m.Update(wheelAt(true, 3, 10))
-	m = next.(*app.Model)
-	if m.View() != gridAfterBaseline {
-		t.Error("wheel over the sidebar must not scroll the grid")
+	// Four columns: one scroll reveals the second card row, ending at
+	// entry-19.
+	if !strings.Contains(gridAfterBaseline, "entry-19.txt") {
+		t.Fatal("expected the baseline grid scroll to have happened")
 	}
 
-	// Over the docked inspector: no scroll.
-	next, _ = m.Update(wheelAt(true, 110, 5))
-	m = next.(*app.Model)
-	if m.View() != gridAfterBaseline {
-		t.Error("wheel over the inspector must not scroll the grid")
+	nonGrid := []struct {
+		name string
+		x, y int
+	}{
+		{"docked sidebar", 3, 10},
+		{"docked inspector", 110, 5},
+		{"header row", 40, 0},
+		{"status bar", 40, 29},
+	}
+	for _, tc := range nonGrid {
+		next, _ := m.Update(wheelAt(true, tc.x, tc.y))
+		got := next.(*app.Model).View()
+		if got != gridAfterBaseline {
+			t.Errorf("wheel over the %s must not scroll the grid", tc.name)
+		}
 	}
 
-	// Header row: not the grid.
-	next, _ = m.Update(wheelAt(true, 40, 0))
+	// A blocking overlay covers the whole screen: no scrolling beneath.
+	// Scrolling further would reveal entry-28 (scroll row 2); the wheel
+	// over the menu must not, and the position must survive the overlay.
+	next, _ = m.Update(keyMsg("s"))
 	m = next.(*app.Model)
-	if m.View() != gridAfterBaseline {
-		t.Error("wheel over the header must not scroll the grid")
+	next, _ = m.Update(wheelAt(true, 30, 5))
+	m = next.(*app.Model)
+	next, _ = m.Update(keyMsg("esc"))
+	m = next.(*app.Model)
+	if strings.Contains(m.View(), "entry-28.txt") {
+		t.Error("wheel over a blocking overlay scrolled the grid beneath it")
 	}
 }
 
