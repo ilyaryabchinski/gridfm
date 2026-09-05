@@ -42,10 +42,11 @@ allows it and fast, safe operations everywhere else.
   byte-level progress, cancellable mid-flight, and partial completion
   reported accurately (3 of 5 moved is not "done").
 - **Results you can inspect** — a non-blocking operation shelf, a
-  per-operation summary log, and a results overlay listing every item's
-  outcome.
-- **Typed confirmation for deletes** — permanent deletion requires
-  typing `yes`; trash does not.
+  per-operation summary log, and a results overlay showing summary counts
+  and failures.
+- **Typed confirmation for deletes** — permanent deletion of directories or
+  multiple items requires typing `yes`; a single regular file uses ordinary
+  confirmation, and trash does not require typing `yes`.
 
 ### Panels
 
@@ -56,7 +57,8 @@ allows it and fast, safe operations everywhere else.
   symlink targets, and a bounded text preview for small files — kept
   fresh across refreshes, focus moves, edits, and metadata changes.
 - **Bookmarks** — managed in-app with `b` / `B`, persisted in
-  `$XDG_DATA_HOME/gridfm`.
+  `$XDG_CONFIG_HOME/gridfm/bookmarks.conf` (default
+  `~/.config/gridfm/bookmarks.conf`).
 
 ### Images
 
