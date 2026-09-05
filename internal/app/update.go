@@ -266,6 +266,14 @@ func (m *Model) applyDirectoryLoaded(msg DirectoryLoadedMsg) (bool, tea.Cmd, tea
 		m.note = ""
 	}
 	m.loadErr = nil
+
+	// A filter is scratch space for the directory it was typed in.
+	// Navigating elsewhere clears it, so the new listing is not instantly
+	// thinned by a query that matched nothing there; same-directory
+	// refreshes keep it.
+	if msg.Path != m.browser.Path {
+		m.browser.SetFilter("")
+	}
 	m.browser.SetEntries(msg.Path, msg.Entries)
 	m.syncGridColumns()
 	m.clampScroll()
@@ -734,6 +742,10 @@ func (m *Model) handleEnter() (tea.Model, tea.Cmd) {
 		if !ok {
 			return m, nil
 		}
+
+		// Choosing a place hands control back to the grid: the sidebar
+		// selection did its job.
+		m.region = RegionGrid
 
 		return m, loadDirectoryCmd(m.startRequest(), place.Path)
 	}
