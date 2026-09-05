@@ -21,7 +21,8 @@ func main() {
 			"(nerdfont needs a patched font; use labels if glyphs render wrong)")
 	images := flag.String("images", "auto",
 		"terminal image thumbnails: auto, on, or off "+
-			"(auto enables them on kitty, foot, and ghostty; on forces them even in multiplexers)")
+			"(auto enables them on kitty and ghostty; on forces them, e.g. for a "+
+			"foot build verified to speak kitty graphics; off disables them)")
 
 	flag.Parse()
 

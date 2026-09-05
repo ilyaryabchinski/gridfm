@@ -260,6 +260,41 @@ func TestFastDoubleQuit(t *testing.T) {
 	}
 }
 
+// TestRuneBurstKeepsEveryCommand pins that a burst like rj preserves the
+// refresh command the r started: overwriting it with the j's nil would
+// strand the browser in the loading state with no load in flight.
+func TestRuneBurstKeepsEveryCommand(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	m := gridOnly(t, resize(t, app.New(root, app.Options{}), 80, 24))
+	m = loaded(t, m, 1, root, entriesAt(root, 10), nil)
+
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("rj")})
+	if cmd == nil {
+		t.Fatal("a burst whose first key starts a refresh must keep that command")
+	}
+	m = next.(*app.Model)
+	if !m.IsLoading() {
+		t.Fatal("r should have started a load")
+	}
+
+	// The preserved command must actually run the load to completion —
+	// with the old bug the j's nil overwrote it and the model was stuck
+	// loading forever.
+	for _, msg := range runBatch(t, cmd) {
+		if loaded, ok := msg.(app.DirectoryLoadedMsg); ok {
+			m = feed(t, m, loaded)
+		}
+	}
+	if m.IsLoading() {
+		t.Fatal("the load never completed: the refresh command was lost")
+	}
+	if m.LoadError() != nil {
+		t.Fatalf("load failed: %v", m.LoadError())
+	}
+}
+
 // TestRuneBurstReplaysEachRune pins that a fast jjj run navigates three
 // entries down, like three separate presses would.
 func TestRuneBurstReplaysEachRune(t *testing.T) {

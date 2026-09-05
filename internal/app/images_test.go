@@ -254,7 +254,7 @@ func TestImageSyncWritesAndClears(t *testing.T) {
 	// Clearing the screen removes everything.
 	syncer.Slots(nil)
 	waitFor(t, func() bool {
-		return strings.Contains(out.String(), "a=d,d=p,")
+		return strings.Contains(out.String(), "a=d,d=i,")
 	})
 
 	syncer.Stop()
@@ -264,6 +264,34 @@ func TestImageSyncWritesAndClears(t *testing.T) {
 	if !strings.HasPrefix(out.String(), kitty.CursorSave) {
 		t.Error("output batches must be cursor-wrapped")
 	}
+}
+
+// TestImageSyncResetSurvivesCoalescing pins that a Reset followed
+// immediately by a slots ship still resets: the pending reset must never
+// be coalesced away by a placement update, or stale screen assumptions
+// survive a resize and the image is never re-uploaded.
+func TestImageSyncResetSurvivesCoalescing(t *testing.T) {
+	t.Parallel()
+
+	var out lockedBuffer
+	syncer := app.NewImageSync(&out, nil, 10, 20, func(app.ThumbReadyMsg) {})
+
+	png := tinyPNG(t)
+	slot := []kitty.Slot{{Key: "a", PNG: png, Row: 3, Col: 2, Cols: 12, Rows: 2}}
+	syncer.Slots(slot)
+	waitFor(t, func() bool {
+		return strings.Count(out.String(), "f=100") == 1
+	})
+
+	// Both updates land before the loop can drain: the reset must win.
+	syncer.Reset()
+	syncer.Slots(slot)
+	waitFor(t, func() bool {
+		return strings.Contains(out.String(), "a=d,d=A") &&
+			strings.Count(out.String(), "f=100") == 2
+	})
+
+	syncer.Stop()
 }
 
 func TestImageSyncResetForcesRetransmit(t *testing.T) {

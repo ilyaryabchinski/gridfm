@@ -121,7 +121,7 @@ func TestEncodeAtPositionsCursor(t *testing.T) {
 	if !strings.HasPrefix(out, "\x1b[3;4H") {
 		t.Fatalf("must position to row 3 col 4 first: %q", out)
 	}
-	if !strings.Contains(out, "a=p,i=5,p=6,c=8,r=5,q=2;") {
+	if !strings.Contains(out, "a=p,C=1,i=5,p=6,c=8,r=5,q=2;") {
 		t.Fatalf("placement command wrong: %q", out)
 	}
 }
@@ -129,10 +129,10 @@ func TestEncodeAtPositionsCursor(t *testing.T) {
 func TestDeleteCommands(t *testing.T) {
 	t.Parallel()
 
-	if got := string(kitty.EncodeDeletePlacement(5, 6)); got != "\x1b_Ga=d,d=p,i=5,p=6,q=2;\x1b\\" {
+	if got := string(kitty.EncodeDeletePlacement(5, 6)); got != "\x1b_Ga=d,d=i,i=5,p=6,q=2;\x1b\\" {
 		t.Errorf("delete placement = %q", got)
 	}
-	if got := string(kitty.EncodeDeleteImage(5)); got != "\x1b_Ga=d,d=i,i=5,q=2;\x1b\\" {
+	if got := string(kitty.EncodeDeleteImage(5)); got != "\x1b_Ga=d,d=I,i=5,q=2;\x1b\\" {
 		t.Errorf("delete image = %q", got)
 	}
 	if got := string(kitty.EncodeDeleteAll()); got != "\x1b_Ga=d,d=A,q=2;\x1b\\" {
@@ -154,7 +154,7 @@ func TestTableSyncPlacesAndReuses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(out), "a=p,i=1,p=2,c=8,r=3") {
+	if !strings.Contains(string(out), "a=p,C=1,i=1,p=2,c=8,r=3") {
 		t.Fatalf("first sync must transmit and place: %q", out)
 	}
 	if tbl.Active() != 1 {
@@ -180,10 +180,10 @@ func TestTableSyncPlacesAndReuses(t *testing.T) {
 	if strings.Contains(s, "f=100") {
 		t.Error("moving a slot must not retransmit the image")
 	}
-	if !strings.Contains(s, "a=d,d=p,i=1,p=2") {
+	if !strings.Contains(s, "a=d,d=i,i=1,p=2") {
 		t.Error("the old placement must be deleted")
 	}
-	if !strings.Contains(s, "a=p,i=1,p=3") {
+	if !strings.Contains(s, "a=p,C=1,i=1,p=3") {
 		t.Error("the new placement must appear")
 	}
 }
@@ -206,10 +206,10 @@ func TestTableSyncMovesAndClearsUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(out)
-	if !strings.Contains(s, "a=d,d=p,i=") {
+	if !strings.Contains(s, "a=d,d=i,i=") {
 		t.Error("the scrolled-off placement must be deleted")
 	}
-	if !strings.Contains(s, "a=d,d=i,i=") {
+	if !strings.Contains(s, "a=d,d=I,i=") {
 		t.Error("the scrolled-off image must be freed")
 	}
 

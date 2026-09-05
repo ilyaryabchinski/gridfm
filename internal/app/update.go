@@ -127,21 +127,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // read and Bubble Tea groups them — so each rune is replayed as its own
 // keypress; otherwise a double-tapped q, a run of jjj, or a quickly typed
 // confirmation word is dropped as an unknown key. Only bracketed pastes
-// (Paste set) stay opaque: they are text, not repeated keys.
+// (Paste set) stay opaque: they are text, not repeated keys. Every
+// replayed key's command is preserved — dropping earlier ones would lose
+// the refresh a fast "rj" started and strand the browser loading.
 func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.Paste || len(msg.Runes) <= 1 {
 		return m.handleKey(msg.String())
 	}
 
 	var (
-		cur tea.Model = m
-		cmd tea.Cmd
+		cur  tea.Model = m
+		cmds []tea.Cmd
 	)
 	for _, r := range msg.Runes {
+		var cmd tea.Cmd
 		cur, cmd = cur.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}, Alt: msg.Alt})
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	}
 
-	return cur, cmd
+	return cur, tea.Batch(cmds...)
 }
 
 // applyOperationEvent consumes one operation manager event and re-arms the
@@ -359,9 +365,15 @@ func (m *Model) followInspector() tea.Cmd {
 // clearing the panel. It runs after every applied directory refresh: a
 // file edited, replaced (even with a preserved mtime), chmod'ed, or
 // chown'ed under the same name must not leave stale metadata on screen.
-// The fresh result replaces the old content only when it lands.
+// The fresh result replaces the old content only when it lands. When the
+// refreshed directory has no focused entry anymore — the file was
+// removed — the panel is invalid and is cleared instead.
 func (m *Model) refreshInspector() tea.Cmd {
 	if _, ok := m.browser.Focused(); !ok {
+		m.inspector = nil
+		m.inspectorErr = nil
+		m.inspectorPath = ""
+
 		return nil
 	}
 
@@ -383,6 +395,7 @@ func (m *Model) applyInspectorLoaded(msg InspectorLoadedMsg) (tea.Model, tea.Cmd
 	}
 
 	m.inspector = msg.Info
+	m.inspectorErr = nil // a fresh success supersedes an earlier failure
 
 	return m, nil
 }

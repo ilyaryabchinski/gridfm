@@ -80,11 +80,13 @@ func EncodeTransmit(id uint32, png []byte) ([]byte, error) {
 	return []byte(out.String()), nil
 }
 
-// EncodePlace returns the command that displays image id at the cell
-// origin row, col (1-based), scaled to cover cols x rows cells. The
-// caller must position the cursor first; EncodeAt does both.
+// EncodePlace returns the command that displays image id covering
+// cols x rows cells. C=1 keeps the cursor motionless during placement —
+// the default policy moves it right and down by the placement size, which
+// would desync the TUI's renderer. The caller must position the cursor
+// first; EncodeAt does both.
 func EncodePlace(id, placementID uint32, cols, rows int) []byte {
-	return []byte(fmt.Sprintf("%sa=p,i=%d,p=%d,c=%d,r=%d,q=2;%s", apcStart, id, placementID, cols, rows, apcEnd))
+	return []byte(fmt.Sprintf("%sa=p,C=1,i=%d,p=%d,c=%d,r=%d,q=2;%s", apcStart, id, placementID, cols, rows, apcEnd))
 }
 
 // EncodeAt returns the cursor positioning plus placement for one image:
@@ -97,16 +99,20 @@ func EncodeAt(id, placementID uint32, row, col, cols, rows int) []byte {
 	return []byte(out.String())
 }
 
-// EncodeDeletePlacement removes one placement, leaving the image data
-// uploaded for reuse elsewhere.
+// EncodeDeletePlacement removes one placement identified by its image id
+// and placement id. Per the delete table, that selector is lowercase d=i
+// with both keys; d=p means "placements intersecting a cell" and would
+// misfire. The lowercase form keeps the image data uploaded for reuse.
 func EncodeDeletePlacement(id, placementID uint32) []byte {
-	return []byte(fmt.Sprintf("%sa=d,d=p,i=%d,p=%d,q=2;%s", apcStart, id, placementID, apcEnd))
+	return []byte(fmt.Sprintf("%sa=d,d=i,i=%d,p=%d,q=2;%s", apcStart, id, placementID, apcEnd))
 }
 
-// EncodeDeleteImage frees the uploaded image data; its placements
-// disappear with it.
+// EncodeDeleteImage frees the uploaded image data and all its placements.
+// The uppercase variant is what releases the terminal-side memory; the
+// lowercase d=i only hides the image while keeping the data. Data is kept
+// if the image lives on in scrollback, which the alt screen never has.
 func EncodeDeleteImage(id uint32) []byte {
-	return []byte(fmt.Sprintf("%sa=d,d=i,i=%d,q=2;%s", apcStart, id, apcEnd))
+	return []byte(fmt.Sprintf("%sa=d,d=I,i=%d,q=2;%s", apcStart, id, apcEnd))
 }
 
 // EncodeDeleteAll removes every image and placement on screen: the

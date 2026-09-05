@@ -159,7 +159,6 @@ func TestRejectedLoadsLeaveInspectorAlone(t *testing.T) {
 	m = loaded(t, m, 1, root, []browser.Entry{
 		{Name: "notes.txt", Path: victim},
 	}, nil)
-
 	m, _ = pressI(t, m)
 	req1 := m.InspectorRequestID()
 	m = feed(t, m, app.InspectorLoadedMsg{

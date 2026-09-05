@@ -12,8 +12,8 @@ import (
 // Protocol names a terminal image protocol this program can speak.
 type Protocol string
 
-// ProtocolKitty is the Kitty graphics protocol, spoken by kitty, foot,
-// and Ghostty. It is currently the only backend.
+// ProtocolKitty is the Kitty graphics protocol, spoken by kitty and
+// Ghostty. It is currently the only backend.
 const ProtocolKitty Protocol = "kitty"
 
 // Mode is the user's preference for terminal graphics.
@@ -60,6 +60,8 @@ func (m Mode) String() string {
 // judged from environment markers. Multiplexers hide or rewrite the
 // real terminal's identity, so they are never auto-detected even when a
 // capable client sits behind them; the user can still force ModeOn.
+// Terminals without a verified protocol implementation (foot speaks
+// Sixel) are likewise left to an explicit ModeOn.
 func Detect(env func(string) string) (Protocol, bool) {
 	if env == nil {
 		return "", false
@@ -85,12 +87,14 @@ func Detect(env func(string) string) (Protocol, bool) {
 	}
 
 	term := env("TERM")
-	switch {
-	case strings.Contains(term, "kitty"), strings.Contains(term, "ghostty"):
-		return ProtocolKitty, true
-	case term == "foot" || strings.HasPrefix(term, "foot-"):
+	if strings.Contains(term, "kitty") || strings.Contains(term, "ghostty") {
 		return ProtocolKitty, true
 	}
+
+	// Foot speaks Sixel, not this protocol: auto-detecting it would emit
+	// unsupported commands while the icon fallback was already traded
+	// away, leaving blank thumbnail areas. A foot user who has verified
+	// their build renders kitty graphics can still force --images=on.
 
 	return "", false
 }

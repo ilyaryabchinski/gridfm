@@ -28,12 +28,16 @@ type ThumbReadyMsg struct {
 	PNG []byte
 }
 
-// imgUpdate is one instruction for the sync loop: either a desired
-// placement set or a reset demand. Everything is serialized through one
-// channel so the table is only ever touched by the loop.
+// imgUpdate is the pending work state for the sync loop, guarded by mu.
+// valid marks a slots snapshot as present (nil is meaningful: it clears
+// placements). reset is sticky until consumed — a slots update must
+// never erase it, or stale screen assumptions survive a resize or an
+// external viewer. final ends the loop after writing the last delete.
 type imgUpdate struct {
+	valid bool
 	slots []kitty.Slot
 	reset bool
+	final bool
 }
 
 // ImageSync owns everything that must not race the render loop: the
@@ -42,7 +46,9 @@ type imgUpdate struct {
 // ships immutable slot lists and job requests.
 type ImageSync struct {
 	mu       sync.Mutex
-	ch       chan imgUpdate
+	pend     imgUpdate
+	kick     chan struct{}
+	done     chan struct{}
 	jobs     chan ThumbJob
 	inFlight map[string]bool
 	notify   func(ThumbReadyMsg)
@@ -67,7 +73,8 @@ func NewImageSync(out io.Writer, store *thumbs.Store, cellW, cellH int, notify f
 	}
 
 	s := &ImageSync{
-		ch:       make(chan imgUpdate, 1),
+		kick:     make(chan struct{}, 1),
+		done:     make(chan struct{}),
 		jobs:     make(chan ThumbJob, 256),
 		inFlight: map[string]bool{},
 		notify:   notify,
@@ -87,37 +94,41 @@ func NewImageSync(out io.Writer, store *thumbs.Store, cellW, cellH int, notify f
 	return s
 }
 
-// ship queues an update, never blocking: the latest one wins.
+// ship queues an update, never blocking: the latest slots snapshot wins,
+// but a pending reset is sticky — coalescing must not let a placement
+// update discard it.
 func (s *ImageSync) ship(u imgUpdate) {
 	s.mu.Lock()
-	quitting := s.quitting
-	s.mu.Unlock()
-	if quitting {
+	if s.quitting {
+		s.mu.Unlock()
+
 		return
 	}
+	if u.reset {
+		s.pend.reset = true
+	}
+	if u.valid {
+		s.pend.valid = true
+		s.pend.slots = u.slots
+	}
+	s.mu.Unlock()
 
 	select {
-	case s.ch <- u:
+	case s.kick <- struct{}{}:
 	default:
-		// The single buffer is full: replace its stale entry.
-		select {
-		case <-s.ch:
-		default:
-		}
-		select {
-		case s.ch <- u:
-		default:
-		}
 	}
 }
 
 // Slots ships a desired placement set.
-func (s *ImageSync) Slots(slots []kitty.Slot) { s.ship(imgUpdate{slots: slots}) }
+func (s *ImageSync) Slots(slots []kitty.Slot) { s.ship(imgUpdate{valid: true, slots: slots}) }
 
-// Reset demands the terminal's graphics state be treated as garbage.
-func (s *ImageSync) reset() { s.ship(imgUpdate{reset: true}) }
+// Reset demands the terminal's graphics state be treated as garbage — an
+// external viewer ran, or the terminal was resized — so the next frame
+// re-uploads everything from scratch.
+func (s *ImageSync) Reset() { s.ship(imgUpdate{reset: true}) }
 
-// Load requests thumbnail generation for one entry; repeated requests for// the same key while one is in flight are dropped. Results arrive via
+// Load requests thumbnail generation for one entry; repeated requests for
+// the same key while one is in flight are dropped. Results arrive via
 // notify as ThumbReadyMsg.
 func (s *ImageSync) Load(job ThumbJob) {
 	s.mu.Lock()
@@ -139,15 +150,10 @@ func (s *ImageSync) Load(job ThumbJob) {
 	}
 }
 
-// Reset tells the sync loop the terminal's graphics state is no longer
-// trustworthy — an external viewer ran, or the terminal was resized — so
-// it drops every table assumption and re-uploads from scratch on the
-// next frame.
-func (s *ImageSync) Reset() { s.ship(imgUpdate{reset: true}) }
-
-// Stop clears every on-screen image and shuts the loops down. Safe to
-// call once; called after the program loop has exited, so no more Ships
-// arrive.
+// Stop drains any pending work, writes the final delete-all through the
+// loop so it can never interleave with placement output, and shuts
+// everything down. Safe to call once; called after the program loop has
+// exited, so no more updates arrive.
 func (s *ImageSync) Stop() {
 	s.mu.Lock()
 	if s.quitting {
@@ -156,30 +162,53 @@ func (s *ImageSync) Stop() {
 		return
 	}
 	s.quitting = true
+	s.pend.final = true
 	s.mu.Unlock()
 
-	close(s.jobs) // workers drain and exit
-	close(s.ch)   // loop drains pending updates and exits
-	s.write(kitty.EncodeDeleteAll())
+	close(s.jobs) // workers drain in-flight jobs and exit
+
+	select {
+	case s.kick <- struct{}{}:
+	default:
+	}
+	<-s.done // the loop consumed the final update and wrote the delete
 }
 
 // loop serializes protocol output and keeps the table as screen truth.
+// It owns the table exclusively: all other goroutines communicate
+// through the pending update.
 func (s *ImageSync) loop() {
-	for u := range s.ch {
-		if u.reset {
-			// The screen's images are garbage: delete everything and
-			// forget every upload so the next sync re-transmits.
-			s.write(kitty.EncodeDeleteAll())
-			s.table = kitty.NewTable()
+	defer close(s.done)
 
-			continue
-		}
+	for range s.kick {
+		for {
+			s.mu.Lock()
+			u := s.pend
+			s.pend.valid = false
+			s.pend.reset = false
+			s.mu.Unlock()
 
-		payload, err := s.table.Sync(u.slots)
-		if err != nil || len(payload) == 0 {
-			continue
+			if u.reset {
+				// The screen's images are garbage: delete everything and
+				// forget every upload so the next sync re-transmits.
+				s.write(kitty.EncodeDeleteAll())
+				s.table = kitty.NewTable()
+			}
+			if u.valid {
+				payload, err := s.table.Sync(u.slots)
+				if err == nil && len(payload) > 0 {
+					s.write(payload)
+				}
+			}
+			if u.final {
+				s.write(kitty.EncodeDeleteAll())
+
+				return
+			}
+			if !u.valid && !u.reset {
+				break // nothing left in this batch; wait for the next kick
+			}
 		}
-		s.write(payload)
 	}
 }
 

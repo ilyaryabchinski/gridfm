@@ -23,8 +23,8 @@ func TestDetectRecognizesCapableTerminals(t *testing.T) {
 		{"kitty term", map[string]string{"TERM": "xterm-kitty"}, true},
 		{"ghostty resources", map[string]string{"TERM": "xterm-256color", "GHOSTTY_RESOURCES_DIR": "/usr/share/ghostty"}, true},
 		{"ghostty term", map[string]string{"TERM": "xterm-ghostty"}, true},
-		{"foot term", map[string]string{"TERM": "foot"}, true},
-		{"foot extras term", map[string]string{"TERM": "foot-extra"}, true},
+		{"foot term", map[string]string{"TERM": "foot"}, false},
+		{"foot extras term", map[string]string{"TERM": "foot-extra"}, false},
 		{"plain xterm", map[string]string{"TERM": "xterm-256color"}, false},
 		{"no term", map[string]string{}, false},
 	}
@@ -67,7 +67,6 @@ func TestDetectRejectsMultiplexers(t *testing.T) {
 		})
 	}
 }
-
 func TestResolveHonorsMode(t *testing.T) {
 	t.Parallel()
 
