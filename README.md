@@ -6,6 +6,9 @@ not lists you read: cards tile with gaps, resize with the terminal, and
 zoom between three densities — with image thumbnails where the terminal
 allows it and fast, safe operations everywhere else.
 
+Supported platforms: Linux on amd64 and arm64; macOS 15 on Apple Silicon and
+Intel. CI runs the test suite on both macOS architectures.
+
 ![](docs/screenshot.png)
 
 ## Features
@@ -17,7 +20,7 @@ allows it and fast, safe operations everywhere else.
   surprise navigation.
 - **Three zoom densities** — compact, normal, and detailed cards
   (`+` / `-`), with automatic compaction on short terminals.
-- **Live directories** — inotify-watched with debounced refreshes and a
+- **Live directories** — filesystem-watched with debounced refreshes and a
   stale-load latch that catches changes during a load; degrades to
   manual refresh with a note if watching fails.
 - **Incremental filtering** — `/` narrows the view as you type, with
@@ -36,10 +39,10 @@ allows it and fast, safe operations everywhere else.
   applied to all, recursive copies refuse to descend into themselves,
   symlinks are resolved before replacement, and cross-device moves fall
   back to copy-and-verify instead of failing.
-- **Real trash** — XDG trash with `.trashinfo` metadata, so desktop
-  environments can restore what gridfm trashed.
+- **Real trash** — XDG trash on Linux and native Finder Trash on macOS.
 - **Bounded serial queue** — operations run one at a time with
-  byte-level progress, cancellable mid-flight, and partial completion
+  byte-level copy progress, cancellation between items and during copies,
+  and partial completion
   reported accurately (3 of 5 moved is not "done").
 - **Results you can inspect** — a non-blocking operation shelf, a
   per-operation summary log, and a results overlay showing summary counts
@@ -97,13 +100,21 @@ make install   # bin/gridfm -> ~/.local/bin, man page included
 
 ### From release binaries
 
-Download the archive and checksum file from the releases page, verify,
-then:
+Download the archive for your OS and architecture and the checksum file from
+the releases page, verify, then extract it and install `gridfm`:
 
 ```
-tar xf gridfm_*_linux_amd64.tar.gz
-install -Dm755 gridfm ~/.local/bin/gridfm
+tar xf gridfm-vVERSION-darwin-arm64.tar.gz
+mkdir -p ~/.local/bin ~/.local/share/man/man1
+install -m755 gridfm-vVERSION-darwin-arm64/gridfm ~/.local/bin/gridfm
+install -m644 gridfm-vVERSION-darwin-arm64/gridfm.1 ~/.local/share/man/man1/gridfm.1
 ```
+
+Use the `darwin-amd64` archive on Intel Macs. Linux archives use `linux-amd64`
+or `linux-arm64` in the same commands. Building from source on macOS requires
+the Xcode Command Line Tools for the native Trash and metadata integration.
+
+On macOS, opening an `.app` bundle launches it with the system opener.
 
 ### Shell completions
 
@@ -116,7 +127,8 @@ gridfm --completions fish > ~/.config/fish/completions/gridfm.fish
 ### Man page
 
 ```
-install -Dm644 docs/gridfm.1 ~/.local/share/man/man1/gridfm.1
+mkdir -p ~/.local/share/man/man1
+install -m644 docs/gridfm.1 ~/.local/share/man/man1/gridfm.1
 ```
 
 ## Quick start
@@ -134,6 +146,7 @@ gridfm --hidden --sort size --order desc
 missing file is a clean first run; an invalid value or a misspelled key
 is an error naming the key — typos are never silently ignored.
 Command-line flags win.
+The same XDG configuration path is used on macOS.
 
 ```toml
 icons = "unicode"        # labels | unicode | nerdfont

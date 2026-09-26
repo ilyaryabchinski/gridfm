@@ -5,6 +5,7 @@ package places
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // Place is a sidebar shortcut to a well-known location.
@@ -20,10 +21,12 @@ type Place struct {
 //nolint:gochecknoglobals // static candidate list, never mutated
 var userDirs = []string{
 	"Downloads",
+	"Desktop",
 	"Documents",
 	"Pictures",
 	"Music",
 	"Videos",
+	"Movies",
 	"Projects",
 }
 
@@ -55,9 +58,15 @@ func List() []Place {
 	return list
 }
 
-// homeTrash resolves the freedesktop.org home trash location, mirroring
-// the XDG basedir rules the trash implementation follows.
 func homeTrash() (string, bool) {
+	if runtime.GOOS == "darwin" {
+		home, err := os.UserHomeDir()
+		if err != nil || home == "" {
+			return "", false
+		}
+
+		return filepath.Join(home, ".Trash"), true
+	}
 	if dataHome := os.Getenv("XDG_DATA_HOME"); dataHome != "" {
 		return filepath.Join(dataHome, "Trash"), true
 	}

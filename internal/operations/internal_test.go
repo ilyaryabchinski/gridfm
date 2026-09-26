@@ -11,6 +11,23 @@ import (
 	"testing"
 )
 
+func TestSameEntryAliasKeepsDistinctHardLinkNames(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	src := filepath.Join(root, "Entry")
+	dst := filepath.Join(root, "entry")
+	if err := os.WriteFile(src, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(src, dst); err != nil {
+		t.Skipf("test volume does not distinguish the names: %v", err)
+	}
+	if sameEntryAlias(src, dst) {
+		t.Fatal("hard links with distinct directory entries are not a case rename")
+	}
+}
+
 // TestValidateOperationScopesDescendantCheck keeps the source-target
 // descendant check on the kinds that carry both paths. Create, trash, and
 // delete leave one side empty, and an empty path resolves to the process

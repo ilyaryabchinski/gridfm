@@ -3,6 +3,7 @@ package places_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"gridfm/internal/places"
@@ -56,6 +57,9 @@ func TestListIncludesTrashWhenItExists(t *testing.T) {
 	}
 
 	trash := filepath.Join(dataHome, "Trash")
+	if runtime.GOOS == "darwin" {
+		trash = filepath.Join(home, ".Trash")
+	}
 	if err := os.MkdirAll(filepath.Join(trash, "files"), 0o700); err != nil {
 		t.Fatal(err)
 	}

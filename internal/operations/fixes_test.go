@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -114,6 +115,9 @@ func TestReplaceFailureKeepsExistingDestination(t *testing.T) {
 // the .trashinfo is written before the move, and a metadata failure must
 // leave the source exactly where it was.
 func TestTrashFailureKeepsSourceAndWritesNoRecord(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("XDG trash metadata is Linux-specific")
+	}
 	t.Setenv("XDG_DATA_HOME", filepath.Join(t.TempDir(), "data"))
 
 	if os.Geteuid() == 0 {
@@ -170,6 +174,9 @@ func TestTrashFailureKeepsSourceAndWritesNoRecord(t *testing.T) {
 // TestTrashDoesNotOverwriteExistingRecord pins the exclusive record
 // creation: a pre-existing .trashinfo with a reserved name must survive.
 func TestTrashDoesNotOverwriteExistingRecord(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("XDG trash metadata is Linux-specific")
+	}
 	t.Setenv("XDG_DATA_HOME", filepath.Join(t.TempDir(), "data"))
 
 	trash := filepath.Join(os.Getenv("XDG_DATA_HOME"), "Trash")
