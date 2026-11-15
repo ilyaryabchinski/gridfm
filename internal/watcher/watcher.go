@@ -39,6 +39,13 @@ type Watcher struct {
 	registered string
 	notify     *fsnotify.Watcher
 
+	// errs is where watcher failures are read from. It is notify.Errors in
+	// production; tests substitute their own channel because fsnotify owns
+	// and closes notify.Errors, so sending into it from a test races with
+	// that close on backends (kqueue) whose Close does not wait for the
+	// reader goroutine.
+	errs <-chan error
+
 	events chan Event
 	stop   chan struct{}
 }
@@ -51,14 +58,16 @@ func New() (*Watcher, error) {
 		return nil, err
 	}
 
-	return newWith(notify, DefaultDelay), nil
+	return newWith(notify, notify.Errors, DefaultDelay), nil
 }
 
-// newWith wraps an existing fsnotify watcher; the test seam.
-func newWith(notify *fsnotify.Watcher, delay time.Duration) *Watcher {
+// newWith wraps an existing fsnotify watcher and reads failures from errs;
+// the test seam.
+func newWith(notify *fsnotify.Watcher, errs <-chan error, delay time.Duration) *Watcher {
 	w := &Watcher{
 		delay:  delay,
 		notify: notify,
+		errs:   errs,
 		events: make(chan Event),
 		stop:   make(chan struct{}),
 	}
@@ -157,7 +166,7 @@ func (w *Watcher) loop() {
 			// Restart the window: only silence publishes.
 			debounce = time.After(w.delay)
 
-		case err, ok := <-w.notify.Errors:
+		case err, ok := <-w.errs:
 			if !ok {
 				return
 			}

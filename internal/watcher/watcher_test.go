@@ -298,13 +298,14 @@ func TestErrorSurfaced(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := newWith(notify, 10*time.Millisecond)
+	errs := make(chan error)
+	w := newWith(notify, errs, 10*time.Millisecond)
 	defer func() { _ = w.Close() }()
 	if err := w.Watch(t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 
-	notify.Errors <- os.ErrPermission
+	errs <- os.ErrPermission
 
 	ev := expectEvent(t, w)
 	if ev.Err == nil {
@@ -323,13 +324,14 @@ func TestOverflowBecomesChangeHint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := newWith(notify, 10*time.Millisecond)
+	errs := make(chan error)
+	w := newWith(notify, errs, 10*time.Millisecond)
 	defer func() { _ = w.Close() }()
 	if err := w.Watch(dir); err != nil {
 		t.Fatal(err)
 	}
 
-	notify.Errors <- fsnotify.ErrEventOverflow
+	errs <- fsnotify.ErrEventOverflow
 
 	if ev := expectEvent(t, w); ev.Err != nil {
 		t.Fatalf("overflow should degrade to a change hint, got error %v", ev.Err)
