@@ -7,7 +7,10 @@ on:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -16,6 +19,7 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Lint
+        if: runner.os == 'Linux'
         uses: golangci/golangci-lint-action@v9
         with:
           # v7+ of the action supports the v2 linter series only; v2.13
@@ -24,3 +28,5 @@ jobs:
           args: --timeout 5m
       - name: Test
         run: go test -race -timeout 10m ./...
+      - name: Build
+        run: make build

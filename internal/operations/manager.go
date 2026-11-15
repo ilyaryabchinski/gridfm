@@ -152,12 +152,14 @@ func validateOperation(op Operation) error {
 	}
 
 	switch op.Kind {
-	case OpCopy, OpMove, OpRename:
+	case OpCopy, OpMove:
 		// Only these kinds carry a meaningful source-target pair. Create,
 		// trash, and delete items leave one side empty, and an empty path
 		// resolves to the process working directory, which would reject
 		// every operation at or beneath the launch location.
 		return ValidateDestinations(op.Items)
+	case OpRename:
+		return validateRenameDestinations(op.Items)
 	case OpCreateFile, OpCreateDir, OpTrash, OpDelete:
 		// Single-sided operations have no destination to validate.
 	}

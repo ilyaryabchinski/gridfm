@@ -3,6 +3,7 @@ package operations_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -10,6 +11,9 @@ import (
 )
 
 func TestTrashMovesFileAndWritesTrashInfo(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("XDG trash metadata is Linux-specific")
+	}
 	t.Setenv("XDG_DATA_HOME", filepath.Join(t.TempDir(), "data"))
 
 	srcDir := t.TempDir()
@@ -64,6 +68,9 @@ func TestTrashMovesFileAndWritesTrashInfo(t *testing.T) {
 }
 
 func TestTrashDirectoryAndCollisionHandling(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("XDG trash layout is Linux-specific")
+	}
 	t.Setenv("XDG_DATA_HOME", filepath.Join(t.TempDir(), "data"))
 
 	srcDir := t.TempDir()

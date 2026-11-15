@@ -1,10 +1,23 @@
 package open_test
 
 import (
+	"runtime"
 	"testing"
 
 	"gridfm/internal/open"
 )
+
+func TestDesktopCommandUsesPlatformOpener(t *testing.T) {
+	t.Parallel()
+
+	want := "xdg-open"
+	if runtime.GOOS == "darwin" {
+		want = "/usr/bin/open"
+	}
+	if got := open.DesktopCommand(); got != want {
+		t.Fatalf("desktop opener = %q, want %q", got, want)
+	}
+}
 
 func TestTargetForTextLikeFiles(t *testing.T) {
 	t.Parallel()

@@ -181,6 +181,14 @@ func runItem(ctx context.Context, kind Kind, item Item, resolve conflictResolver
 }
 
 func renameItem(ctx context.Context, src, dst string, resolve conflictResolver) error {
+	if sameEntryAlias(src, dst) {
+		if err := renameFn(src, dst); err != nil {
+			return fmt.Errorf("rename %q: %w", src, err)
+		}
+
+		return nil
+	}
+
 	action, err := ensureTarget(ctx, dst, resolve)
 	if err != nil {
 		return err

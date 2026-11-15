@@ -6,6 +6,7 @@ package open
 
 import (
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -15,9 +16,18 @@ type Target int
 const (
 	// TargetEditor opens the file in $VISUAL or $EDITOR.
 	TargetEditor Target = iota
-	// TargetDesktop hands the file to xdg-open.
+	// TargetDesktop hands the file to the platform desktop opener.
 	TargetDesktop
 )
+
+// DesktopCommand returns the system opener for this platform.
+func DesktopCommand() string {
+	if runtime.GOOS == "darwin" {
+		return "/usr/bin/open"
+	}
+
+	return "xdg-open"
+}
 
 // editorExts are text-like extensions opened in the editor.
 //

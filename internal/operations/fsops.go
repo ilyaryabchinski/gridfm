@@ -61,7 +61,11 @@ func copyEntry(ctx context.Context, src, dst string, resolve conflictResolver, r
 			return replaceErr
 		}
 
-		return createSymlink(target, dst)
+		if err := createSymlink(target, dst); err != nil {
+			return err
+		}
+
+		return copyMetadata(src, dst)
 	case info.IsDir():
 		if replaceErr := replaceRemove(action, dst, info); replaceErr != nil {
 			return replaceErr
@@ -198,6 +202,9 @@ func copyDir(
 	}
 
 	if created {
+		if metadataErr := copyMetadata(src, dst); metadataErr != nil {
+			return metadataErr
+		}
 		if chmodErr := os.Chmod(dst, info.Mode().Perm()); chmodErr != nil {
 			return fmt.Errorf("chmod %q: %w", dst, chmodErr)
 		}
@@ -251,6 +258,9 @@ func copyFile(ctx context.Context, src, dst string, info fs.FileInfo, action Con
 	err = dstFile.Close()
 	if err != nil {
 		return fmt.Errorf("close %q: %w", dst, err)
+	}
+	if metadataErr := copyMetadata(src, dst); metadataErr != nil {
+		return metadataErr
 	}
 
 	return preserveTimes(src, dst)
@@ -382,7 +392,18 @@ func removeAll(ctx context.Context, path string) error {
 // pointing into the source cannot smuggle a self-copy past the lexical
 // comparison.
 func ValidateDestinations(items []Item) error {
+	return validateDestinations(items, false)
+}
+
+func validateRenameDestinations(items []Item) error {
+	return validateDestinations(items, true)
+}
+
+func validateDestinations(items []Item, allowAlias bool) error {
 	for _, item := range items {
+		if allowAlias && sameEntryAlias(item.Source, item.Target) {
+			continue
+		}
 		src, err := resolveReal(item.Source)
 		if err != nil {
 			return fmt.Errorf("resolve %q: %w", item.Source, err)
@@ -394,9 +415,54 @@ func ValidateDestinations(items []Item) error {
 		if dst == src || strings.HasPrefix(dst, src+string(filepath.Separator)) {
 			return fmt.Errorf("%w: %q into %q", ErrDestinationInsideSource, dst, src)
 		}
+		srcInfo, statErr := os.Stat(src)
+		if statErr != nil || !srcInfo.IsDir() {
+			continue
+		}
+		for ancestor := dst; ; ancestor = filepath.Dir(ancestor) {
+			if dstInfo, err := os.Stat(ancestor); err == nil && os.SameFile(srcInfo, dstInfo) {
+				return fmt.Errorf("%w: %q into %q", ErrDestinationInsideSource, dst, src)
+			}
+			if ancestor == filepath.Dir(ancestor) {
+				break
+			}
+		}
 	}
 
 	return nil
+}
+
+func sameEntryAlias(src, dst string) bool {
+	if filepath.Base(src) == filepath.Base(dst) {
+		return false
+	}
+	srcParent, err := os.Stat(filepath.Dir(src))
+	if err != nil {
+		return false
+	}
+	dstParent, err := os.Stat(filepath.Dir(dst))
+	if err != nil || !os.SameFile(srcParent, dstParent) {
+		return false
+	}
+	srcInfo, err := os.Lstat(src)
+	if err != nil {
+		return false
+	}
+	dstInfo, err := os.Lstat(dst)
+	if err != nil || !os.SameFile(srcInfo, dstInfo) {
+		return false
+	}
+	entries, err := os.ReadDir(filepath.Dir(src))
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.Name() == filepath.Base(dst) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // resolveReal returns the absolute path with every existing ancestor's

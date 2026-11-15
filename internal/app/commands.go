@@ -5,8 +5,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
 
 	"gridfm/internal/browser"
+	"gridfm/internal/open"
 	"gridfm/internal/places"
 	"gridfm/internal/preview"
 	"gridfm/internal/watcher"
@@ -37,7 +41,7 @@ func openEntryCmd(requestID uint64, path string) tea.Cmd {
 				Err:       fmt.Errorf("stat %q: %w", path, err),
 			}
 		}
-		if !info.IsDir() {
+		if !info.IsDir() || runtime.GOOS == "darwin" && strings.EqualFold(filepath.Ext(path), ".app") {
 			return EntryResolvedMsg{Path: path, RequestID: requestID}
 		}
 
@@ -47,22 +51,23 @@ func openEntryCmd(requestID uint64, path string) tea.Cmd {
 	}
 }
 
-// desktopOpenCmd starts xdg-open off the update loop and waits for it, so
+// desktopOpenCmd starts the platform opener off the update loop and waits for it, so
 // post-start failures surface as a typed message instead of vanishing. The
 // open ID tags the completion for stale-result rejection.
 func desktopOpenCmd(openID uint64, path string) tea.Cmd {
 	return func() tea.Msg {
-		//nolint:gosec // xdg-open is a fixed program; the path is passed as an argument, never a shell string
-		cmd := exec.CommandContext(context.Background(), "xdg-open", path)
+		program := open.DesktopCommand()
+		//nolint:gosec // the platform opener is fixed; the path is an argument, never a shell string
+		cmd := exec.CommandContext(context.Background(), program, path)
 
 		err := cmd.Start()
 		if err != nil {
-			return OpenFinishedMsg{Path: path, RequestID: openID, Err: fmt.Errorf("start xdg-open: %w", err)}
+			return OpenFinishedMsg{Path: path, RequestID: openID, Err: fmt.Errorf("start %s: %w", program, err)}
 		}
 
 		err = cmd.Wait()
 		if err != nil {
-			return OpenFinishedMsg{Path: path, RequestID: openID, Err: fmt.Errorf("xdg-open: %w", err)}
+			return OpenFinishedMsg{Path: path, RequestID: openID, Err: fmt.Errorf("%s: %w", program, err)}
 		}
 
 		return OpenFinishedMsg{Path: path, RequestID: openID}

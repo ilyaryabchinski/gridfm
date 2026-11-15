@@ -1,10 +1,10 @@
-.PHONY: build lint lint-fix fmt vet test bench check clean install release distclean
+.PHONY: build lint lint-fix fmt vet test bench check clean install release release-macos distclean
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+ARCH ?= $(shell go env GOARCH)
 
-# Reproducible build flags: no cgo, no build paths, version stamped from
-# the tag. The archives are created with normalized metadata so the same
-# tree always produces byte-identical artifacts.
+# Build flags omit source paths and stamp the version from the tag. Linux
+# release archives normalize metadata for reproducibility.
 BUILD_FLAGS = -trimpath -buildvcs=true -ldflags "-s -w -X main.version=$(VERSION)"
 TAR_FLAGS = --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 1970-01-01'
 
@@ -35,8 +35,9 @@ clean:
 	rm -rf bin dist
 
 install: build
-	install -Dm755 bin/gridfm ~/.local/bin/gridfm
-	install -Dm644 docs/gridfm.1 ~/.local/share/man/man1/gridfm.1
+	mkdir -p ~/.local/bin ~/.local/share/man/man1
+	install -m755 bin/gridfm ~/.local/bin/gridfm
+	install -m644 docs/gridfm.1 ~/.local/share/man/man1/gridfm.1
 
 # release builds the release matrix into dist/ with checksums. CI runs
 # the same recipe on a version tag.
@@ -52,5 +53,15 @@ release:
 	done
 	cd dist && sha256sum *.tar.gz > checksums.txt
 	@echo "release artifacts in dist/"
+
+release-macos:
+	rm -rf dist
+	@mkdir -p dist
+	mkdir -p dist/gridfm-$(VERSION)-darwin-$(ARCH)
+	CGO_ENABLED=1 GOOS=darwin GOARCH=$(ARCH) \
+		go build $(BUILD_FLAGS) -o dist/gridfm-$(VERSION)-darwin-$(ARCH)/gridfm ./cmd/gridfm
+	cp README.md docs/gridfm.1 dist/gridfm-$(VERSION)-darwin-$(ARCH)/
+	COPYFILE_DISABLE=1 tar -czf dist/gridfm-$(VERSION)-darwin-$(ARCH).tar.gz -C dist gridfm-$(VERSION)-darwin-$(ARCH)
+	@echo "macOS release artifacts in dist/"
 
 distclean: clean
